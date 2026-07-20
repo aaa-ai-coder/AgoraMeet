@@ -89,13 +89,17 @@ const COUNTRIES = [
 $("useEmailLink").onclick = () => { clearErr(); $("phoneStep").classList.add("hidden"); $("otpStep").classList.add("hidden"); $("emailStep").classList.remove("hidden"); };
 $("usePhoneLink").onclick = () => { clearErr(); $("emailStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
 
-function makeVerifier() {
-  if (window.recaptchaVerifier) { try { window.recaptchaVerifier.clear(); } catch (e) {} }
-  window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", { size: "invisible" });
-  return window.recaptchaVerifier;
+let recaptchaReady = null;
+function getVerifier() {
+  if (window.recaptchaVerifier) return Promise.resolve(window.recaptchaVerifier);
+  if (!recaptchaReady) {
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", { size: "invisible" });
+    recaptchaReady = window.recaptchaVerifier.render().then(() => window.recaptchaVerifier).catch(e => { window.recaptchaVerifier = null; recaptchaReady = null; throw e; });
+  }
+  return recaptchaReady;
 }
 
-$("sendOtpBtn").onclick = async () => {
+async function sendOtp() {
   if (!auth) { err("App still loading, wait a moment…"); return; }
   const cc = $("countryCode").value;
   let phone = $("phoneInput").value.trim().replace(/[^0-9]/g, "");
@@ -103,16 +107,23 @@ $("sendOtpBtn").onclick = async () => {
   clearErr();
   $("sendOtpBtn").disabled = true;
   try {
-    const verifier = makeVerifier();
+    const verifier = await getVerifier();
     const full = "+" + cc + phone;
     window.confirmationResult = await signInWithPhoneNumber(auth, full, verifier);
     $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
     $("otpInput").focus();
     toast("Code sent to " + full);
   } catch (e) {
-    err(friendly(e));
+    if (e && e.message && /already been rendered/.test(e.message)) {
+      // recover: recreate verifier on a fresh element
+      try { window.recaptchaVerifier.clear(); } catch (_) {}
+      window.recaptchaVerifier = null; recaptchaReady = null;
+      try { const v = await getVerifier(); window.confirmationResult = await signInWithPhoneNumber(auth, "+" + cc + phone, v); $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden"); $("otpInput").focus(); toast("Code sent to +" + cc + phone); return; } catch (e2) { err(friendly(e2)); }
+    } else err(friendly(e));
   } finally { $("sendOtpBtn").disabled = false; }
-};
+}
+$("sendOtpBtn").onclick = sendOtp;
+$("resendLink").onclick = () => sendOtp();
 
 $("verifyOtpBtn").onclick = async () => {
   const code = $("otpInput").value.trim();
@@ -124,8 +135,6 @@ $("verifyOtpBtn").onclick = async () => {
     err("Wrong or expired code. Try again.");
   }
 };
-
-$("resendLink").onclick = () => { clearErr(); $("otpStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
 
 $("emailBtn").onclick = async () => {
   const e = $("emailInput").value.trim(), p = $("passwordInput").value;
@@ -165,10 +174,12 @@ $("googleBtn").onclick = async () => {
   try {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    // Redirect stays in-app (custom tab) unlike popup which opens external browser on Android WebView
-    await signInWithRedirect(auth, provider);
+    // Popup opens in-app (WebView configured to keep popups internal, no external browser)
+    await signInWithPopup(auth, provider);
   } catch (e) {
-    err(friendly(e));
+    // Fallback to redirect if popup is blocked
+    try { await signInWithRedirect(auth, provider); }
+    catch (e2) { err(friendly(e2)); }
   }
 };
 
