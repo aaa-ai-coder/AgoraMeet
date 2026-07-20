@@ -70,13 +70,19 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', appIdConfigured: !!APP_ID, certificateConfigured: !!APP_CERTIFICATE });
 });
 
-// APK download route
-app.get('/download-apk', (req, res) => {
-  const apkPath = path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-  if (!fs.existsSync(apkPath)) {
+// APK download routes (served directly, no redirect — reliable for phone download)
+function serveApk(res, filePath, fileName) {
+  if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'APK not found. Build it with: cd android && ./gradlew assembleDebug' });
   }
-  res.download(apkPath, 'AgoraMeet-debug.apk');
+  res.download(filePath, fileName);
+}
+
+app.get('/download-apk', (req, res) => {
+  serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet-v1.2.0.apk'), 'AgoraMeet-v1.2.0.apk');
+});
+app.get('/download-apk2', (req, res) => {
+  serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet2-v1.2.0.apk'), 'AgoraMeet2-v1.2.0.apk');
 });
 
 app.listen(PORT, () => {
