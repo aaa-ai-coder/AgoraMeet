@@ -158,6 +158,25 @@ app.get("/api/health", (req, res) => {
 
 // ---- Telegram phone verification (replaces Firebase SMS; no billing needed) ----
 const VERIFY_BOT_USERNAME = process.env.VERIFY_BOT_USERNAME || "AgoraMeet_Login_bot";
+const VERIFY_BOT_TOKEN = process.env.VERIFY_BOT_TOKEN;
+const TG_API = VERIFY_BOT_TOKEN ? `https://api.telegram.org/bot${VERIFY_BOT_TOKEN}` : null;
+async function tg(method, body) {
+  if (!TG_API) return null;
+  return fetch(`${TG_API}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
+}
+
+// Shared confirm logic (used by both the old worker endpoint and the webhook)
+async function confirmCode(code, chatId) {
+  if (!admin) return { ok: false, error: "firebase not configured" };
+  const snap = await admin.firestore().collection("users").where("verifyCode", "==", code).get();
+  if (snap.empty) return { ok: false, error: "code not found or already used" };
+  const ref = snap.docs[0].ref;
+  const d = snap.docs[0].data();
+  if (d.phoneVerified) return { ok: false, error: "code already used" };
+  if (d.codeExpires && d.codeExpires.toDate() < new Date()) return { ok: false, error: "code expired" };
+  await ref.set({ phoneVerified: true, tgChatId: String(chatId), verifyCode: admin.firestore.FieldValue.delete() }, { merge: true });
+  return { ok: true, phone: d.phone || d.uid || "" };
+}
 
 // Start: app sends phone -> server makes code, returns deep link
 app.post("/api/auth/start", async (req, res) => {
@@ -207,21 +226,101 @@ app.get("/api/auth/status", async (req, res) => {
   }
 });
 
-// Confirm: called by the verify bot after user replies YES
+// Confirm: called by the verify bot (legacy worker) after user replies YES
 app.post("/api/bot/confirm", async (req, res) => {
-  if (!admin) return res.status(503).json({ error: "firebase not configured" });
   const { code, chatId } = req.body || {};
   if (!code) return res.status(400).json({ error: "code required" });
   try {
-    const snap = await admin.firestore().collection("users").where("verifyCode", "==", code).get();
-    if (snap.empty) return res.status(404).json({ error: "code not found or already used" });
-    const ref = snap.docs[0].ref;
-    const d = snap.docs[0].data();
-    if (d.phoneVerified) return res.status(409).json({ error: "code already used" });
-    if (d.codeExpires && d.codeExpires.toDate() < new Date()) return res.status(410).json({ error: "code expired" });
-    await ref.set({ phoneVerified: true, tgChatId: String(chatId), verifyCode: admin.firestore.FieldValue.delete() }, { merge: true });
-    res.json({ ok: true, phone: d.phone || d.uid || "" });
+    const r = await confirmCode(code, chatId);
+    if (!r.ok) return res.status(r.error === "code already used" ? 409 : 404).json({ error: r.error });
+    res.json({ ok: true, phone: r.phone });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Webhook: Telegram pushes updates here (reliable alternative to the polling worker)
+app.post("/api/telegram-webhook", async (req, res) => {
+  try {
+    const u = req.body || {};
+    if (u.message && u.message.text && u.message.text.startsWith("/start")) {
+      const code = u.message.text.split(" ")[1];
+      const cid = String(u.message.chat.id);
+      if (code) {
+        await tg("sendMessage", {
+          chat_id: cid,
+          text: "Login code received.\n\nTap the button below to confirm you want to log in to AgoraMeet with this phone number.",
+          reply_markup: { inline_keyboard: [[{ text: "✅ Confirm login", callback_data: "confirm:" + code }]] }
+        });
+      } else {
+        await tg("sendMessage", { chat_id: cid, text: "Hello! Use the button in the AgoraMeet app to start verification." });
+      }
+    } else if (u.callback_query) {
+      const cb = u.callback_query;
+      const cid = String(cb.message.chat.id);
+      await tg("answerCallbackQuery", { callback_query_id: cb.id });
+      if (cb.data && cb.data.startsWith("confirm:")) {
+        const code = cb.data.split("confirm:")[1];
+        const r = await confirmCode(code, cid);
+        await tg("editMessageText", {
+          chat_id: cid,
+          message_id: cb.message.message_id,
+          text: r.ok ? ("Verified " + (r.phone || "your number") + " ✅\nYou can close Telegram and return to the AgoraMeet app.") : ("Verification failed: " + (r.error || "unknown"))
+        });
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Backblaze B2 secure redirect download (supports private buckets for free tier) ----
+let b2AuthCache = null;
+let b2AuthExpiry = 0;
+
+async function getB2Auth() {
+  const keyId = process.env.B2_KEY_ID || "bab29b95528f";
+  const appKey = process.env.B2_APP_KEY || "0056050aca6e4e1a5442feb4155a342fc33b418a15";
+  if (!keyId || !appKey) return null;
+  if (b2AuthCache && Date.now() < b2AuthExpiry) return b2AuthCache;
+  try {
+    const creds = Buffer.from(`${keyId}:${appKey}`).toString("base64");
+    const r = await fetch("https://api.backblazeb2.com/b2api/v3/b2_authorize_account", {
+      headers: { Authorization: `Basic ${creds}` }
+    });
+    if (!r.ok) throw new Error(`b2 auth failed: ${r.status}`);
+    const data = await r.json();
+    b2AuthCache = { apiUrl: data.apiUrl, downloadUrl: data.downloadUrl, token: data.authorizationToken };
+    b2AuthExpiry = Date.now() + 12 * 3600 * 1000; // Cache 12 hours
+    return b2AuthCache;
+  } catch (e) {
+    console.error("[b2-auth-error]", e.message);
+    return null;
+  }
+}
+
+app.get("/api/apk/download", async (req, res) => {
+  const pkg = req.query.pkg; // com.agorameet.app or com.agorameet.app2
+  if (pkg !== "com.agorameet.app" && pkg !== "com.agorameet.app2") {
+    return res.status(400).json({ error: "invalid pkg" });
+  }
+  const b2 = await getB2Auth();
+  if (!b2) return res.status(503).json({ error: "storage service unavailable" });
+  const bucketId = process.env.B2_BUCKET_ID || "eb6abbb209ab891595f2081f";
+  const bucketName = process.env.B2_BUCKET_NAME || "AAA000";
+  const fileName = `${pkg}.apk`;
+  try {
+    const r = await fetch(`${b2.apiUrl}/b2api/v3/b2_get_download_authorization`, {
+      method: "POST",
+      headers: { Authorization: b2.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ bucketId, fileNamePrefix: fileName, validDurationInSeconds: 300 })
+    });
+    if (!r.ok) throw new Error(`b2 download auth failed: ${r.status}`);
+    const data = await r.json();
+    res.redirect(`${b2.downloadUrl}/file/${bucketName}/${fileName}?Authorization=${data.authorizationToken}`);
+  } catch (e) {
+    console.error("[b2-download-error]", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -229,8 +328,7 @@ app.post("/api/bot/confirm", async (req, res) => {
 // Client-side crash/error logging (gives us crash visibility without the Firebase console)
 app.post("/api/client-error", async (req, res) => {
   const b = req.body || {};
-  console.log("[client-error]", b.version || "", b.pkg || "", b.message || "", (b.stack || "").slice(0, 300));
-  try {
+  console.log("[client-error]", b.version || "", b.pkg || "", b.message || "", (b.stack || "").slice(0, 300));  try {
     if (admin) {
       await admin.firestore().collection("logs").doc("clientErrors").collection("items").add({
         at: admin.firestore.FieldValue.serverTimestamp(),
