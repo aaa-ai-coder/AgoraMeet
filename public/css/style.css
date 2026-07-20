@@ -129,6 +129,7 @@ input:focus{border-color:var(--teal);}
 .settings-item .set-val{margin-left:auto;color:var(--muted);font-size:13px;}
 .settings-item.danger{color:var(--danger);}
 .settings-item.danger i{color:var(--danger);}
+.settings-foot{text-align:center;padding:18px;color:var(--muted);font-size:12px;letter-spacing:.3px;}
 
 /* Group create */
 .grp-name-row{padding:0 14px;}

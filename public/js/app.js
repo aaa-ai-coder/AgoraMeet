@@ -1,4 +1,5 @@
 // app.js - AgoraMeet v2 (WhatsApp-style)
+const VERSION = "2.3.0";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -25,6 +26,7 @@ async function loadFirebase() {
   auth = getAuth(fbApp);
   db = getFirestore(fbApp);
   onAuthStateChanged(auth, handleAuthState);
+  $("appVersion") && ($("appVersion").textContent = "AgoraMeet v" + VERSION);
 }
 
 async function handleAuthState(user) {
