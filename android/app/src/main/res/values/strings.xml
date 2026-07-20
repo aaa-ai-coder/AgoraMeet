@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AgoraMeet</string>
+    <string name="title_activity_main">AgoraMeet</string>
+    <string name="package_name">com.agorameet.app</string>
+    <string name="custom_url_scheme">com.agorameet.app</string>
+</resources>
