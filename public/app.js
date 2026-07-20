@@ -12,6 +12,10 @@ let channelName = "";
 let uid = null;
 let displayName = "";
 
+// API base: use the deployed Render server so the APK works standalone on any device.
+// Falls back to same-origin when served from the server itself.
+const API_BASE = (location.protocol === "file:") ? "https://agorameet-server.onrender.com" : "";
+
 let lobbyMicEnabled = true;
 let lobbyCamEnabled = true;
 
@@ -105,7 +109,7 @@ $("joinForm").addEventListener("submit", async (e) => {
   showLoading("Fetching secure token…");
 
   try {
-    const res = await fetch(`/api/token?channel=${encodeURIComponent(channelName)}`);
+    const res = await fetch(`${API_BASE}/api/token?channel=${encodeURIComponent(channelName)}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     appId = data.appId; token = data.token;

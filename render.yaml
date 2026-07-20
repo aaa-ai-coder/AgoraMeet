@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: agorameet-server
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: AGORA_APP_ID
+        sync: false
+      - key: AGORA_CERTIFICATE
+        sync: false
