@@ -13,6 +13,16 @@ const APP_CERTIFICATE = process.env.AGORA_CERTIFICATE || "04f7ae808a1d46df9858f7
 app.use(express.json());
 app.use(express.static('public'));
 
+// CORS: the APK runs in a WebView on a file:// origin, so cross-origin
+// requests to this server are blocked unless we allow them explicitly.
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 /**
  * Endpoint to generate RTC token
  * Query params:
