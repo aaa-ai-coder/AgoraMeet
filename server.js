@@ -290,8 +290,12 @@ async function getB2Auth() {
       headers: { Authorization: `Basic ${creds}` }
     });
     if (!r.ok) throw new Error(`b2 auth failed: ${r.status}`);
-    const data = await r.json();
-    b2AuthCache = { apiUrl: data.apiUrl, downloadUrl: data.downloadUrl, token: data.authorizationToken };
+        const data = await r.json();
+    b2AuthCache = {
+      apiUrl: data.apiInfo?.storageApi?.apiUrl,
+      downloadUrl: data.apiInfo?.storageApi?.downloadUrl,
+      token: data.authorizationToken
+    };
     b2AuthExpiry = Date.now() + 12 * 3600 * 1000; // Cache 12 hours
     return b2AuthCache;
   } catch (e) {
