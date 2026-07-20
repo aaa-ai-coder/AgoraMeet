@@ -10,6 +10,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (id) => document.getElementById(id);
+const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.onrender.com";
+const api = (path) => API_BASE.replace(/\/$/, "") + path;
 let app, auth, db, fbApp;
 let currentUser = null;
 let currentPeer = null;     // {uid, name, phone}
@@ -17,7 +19,7 @@ let unsubMessages = null;
 let unsubChats = null;
 
 async function loadFirebase() {
-  const cfg = await fetch("/api/firebase-config").then(r => r.json());
+  const cfg = await fetch(api("/api/firebase-config")).then(r => r.json());
   if (!cfg || !cfg.apiKey) throw new Error("Firebase config missing (server offline or not configured)");
   fbApp = initializeApp(cfg);
   auth = getAuth(fbApp);
@@ -296,7 +298,7 @@ async function startCall(video) {
   if (video) $("callVideoWrap").classList.remove("hidden"); else $("callVideoWrap").classList.add("hidden");
   show("callScreen");
   try {
-    const res = await fetch(`/api/token?channel=${encodeURIComponent(callChannel)}`);
+    const res = await fetch(api(`/api/token?channel=${encodeURIComponent(callChannel)}`));
     const data = await res.json();
     const AgoraRTC = await import("https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.22.0/index.js");
     agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
@@ -330,7 +332,7 @@ $("callCamBtn").onclick = () => { if (localTracks.video) { const m = localTracks
 let cfPc = null, cfSessionId = null, cfLocalStream = null;
 async function startCallBackup(video) {
   try {
-    const cfg = await fetch("/api/cf/config").then(r => r.json());
+    const cfg = await fetch(api("/api/cf/config")).then(r => r.json());
     if (!cfg.available) throw new Error("Backup unavailable");
     const stream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
     cfLocalStream = stream;
@@ -338,14 +340,14 @@ async function startCallBackup(video) {
     cfPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
     const tr = stream.getTracks().map(t => cfPc.addTransceiver(t, { direction: "sendrecv" }));
     await cfPc.setLocalDescription(await cfPc.createOffer());
-    const r1 = await fetch("/api/cf/session/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sdp: cfPc.localDescription.sdp }) }).then(r => r.json());
+    const r1 = await fetch(api("/api/cf/session/new"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sdp: cfPc.localDescription.sdp }) }).then(r => r.json());
     if (r1.errorCode) throw new Error(r1.errorDescription);
     cfSessionId = r1.sessionId;
     await cfPc.setRemoteDescription(new RTCSessionDescription(r1.sessionDescription));
     cfPc.ontrack = (e) => { if (video) $("remoteVideo").srcObject = e.streams[0]; };
     const trackObjs = tr.map(x => ({ location: "local", mid: x.mid, trackName: x.sender.track.id }));
     await cfPc.setLocalDescription(await cfPc.createOffer());
-    const r2 = await fetch("/api/cf/tracks/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: cfSessionId, tracks: trackObjs, sdp: cfPc.localDescription.sdp }) }).then(r => r.json());
+    const r2 = await fetch(api("/api/cf/tracks/new"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: cfSessionId, tracks: trackObjs, sdp: cfPc.localDescription.sdp }) }).then(r => r.json());
     if (r2.sessionDescription) await cfPc.setRemoteDescription(new RTCSessionDescription(r2.sessionDescription));
     // expose our trackName via Firestore so the peer can pull our remote tracks
     const cid = chatId(currentUser.uid, currentPeer.uid);
@@ -483,7 +485,7 @@ $("aiSendBtn").onclick = async () => {
   aiHistory.push({ role: "user", content: text });
   $("aiStatus").textContent = "typing…";
   try {
-    const r = await fetch("/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
+    const r = await fetch(api("/api/ai/chat"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
     const data = await r.json();
     const reply = data.reply || data.error || "(no response)";
     aiBubble("assistant", reply);
