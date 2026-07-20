@@ -18,9 +18,33 @@ let unsubChats = null;
 
 async function loadFirebase() {
   const cfg = await fetch("/api/firebase-config").then(r => r.json());
+  if (!cfg || !cfg.apiKey) throw new Error("Firebase config missing (server offline or not configured)");
   fbApp = initializeApp(cfg);
   auth = getAuth(fbApp);
   db = getFirestore(fbApp);
+  onAuthStateChanged(auth, handleAuthState);
+}
+
+async function handleAuthState(user) {
+  if (user) {
+    currentUser = user;
+    try {
+      const ref = doc(db, "users", user.uid);
+      await setDoc(ref, {
+        uid: user.uid,
+        name: user.displayName || (user.phoneNumber ? user.phoneNumber : user.email),
+        phone: user.phoneNumber || null,
+        email: user.email || null,
+        online: true,
+        lastSeen: serverTimestamp()
+      }, { merge: true });
+    } catch (e) {}
+    show("mainScreen");
+    loadChats();
+  } else {
+    currentUser = null;
+    show("loginScreen");
+  }
 }
 
 function toast(msg) {
@@ -36,13 +60,29 @@ function showView(v) {
   document.querySelectorAll("#mainScreen .view").forEach(x => x.classList.remove("active"));
   $(v).classList.add("active");
   document.querySelectorAll(".bottomnav .bn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  if (v === "statusView") loadStatus();
+  if (v === "settingsView") loadSettings();
 }
 document.querySelectorAll(".bottomnav .bn").forEach(b => b.onclick = () => showView(b.dataset.view));
-$("newChatBtn").onclick = () => { $("peopleList").innerHTML = ""; showView("newChatView"); };
 
 // ---------------- AUTH ----------------
 function err(msg) { $("authError").textContent = msg; $("authError").classList.remove("hidden"); }
 function clearErr() { $("authError").classList.add("hidden"); }
+
+// Country dial codes (common)
+const COUNTRIES = [
+  { code: "880", name: "Bangladesh" }, { code: "91", name: "India" }, { code: "1", name: "USA/Canada" },
+  { code: "44", name: "UK" }, { code: "92", name: "Pakistan" }, { code: "971", name: "UAE" },
+  { code: "966", name: "Saudi Arabia" }, { code: "65", name: "Singapore" }, { code: "60", name: "Malaysia" },
+  { code: "880", name: "Bangladesh" }
+];
+(function fillCountries() {
+  const sel = $("countryCode");
+  if (!sel) return;
+  const list = [...new Map(COUNTRIES.map(c => [c.code, c])).values()];
+  sel.innerHTML = list.map(c => `<option value="${c.code}">+${c.code}</option>`).join("");
+  sel.value = "880";
+})();
 
 $("useEmailLink").onclick = () => { clearErr(); $("phoneStep").classList.add("hidden"); $("otpStep").classList.add("hidden"); $("emailStep").classList.remove("hidden"); };
 $("usePhoneLink").onclick = () => { clearErr(); $("emailStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
@@ -54,13 +94,15 @@ function makeVerifier() {
 }
 
 $("sendOtpBtn").onclick = async () => {
-  const phone = $("phoneInput").value.trim();
+  if (!auth) { err("App still loading, wait a moment…"); return; }
+  const cc = $("countryCode").value;
+  let phone = $("phoneInput").value.trim().replace(/[^0-9]/g, "");
   if (!/^\d{6,15}$/.test(phone)) { err("Enter a valid number (digits only)"); return; }
   clearErr();
   $("sendOtpBtn").disabled = true;
   try {
     const verifier = makeVerifier();
-    const full = (phone.startsWith("+") ? phone : "+88" + phone);
+    const full = "+" + cc + phone;
     window.confirmationResult = await signInWithPhoneNumber(auth, full, verifier);
     $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
     $("otpInput").focus();
@@ -100,6 +142,7 @@ $("emailBtn").onclick = async () => {
 };
 
 $("googleBtn").onclick = async () => {
+  if (!auth) { err("App still loading, wait a moment…"); return; }
   clearErr();
   $("googleBtn").disabled = true;
   try {
@@ -130,28 +173,6 @@ function friendly(e) {
   return (c && map[c]) || e.message || "Something went wrong.";
 }
 
-$("logoutBtn").onclick = () => signOut(auth);
-
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    currentUser = user;
-    const ref = doc(db, "users", user.uid);
-    await setDoc(ref, {
-      uid: user.uid,
-      name: user.displayName || (user.phoneNumber ? user.phoneNumber : user.email),
-      phone: user.phoneNumber || null,
-      email: user.email || null,
-      online: true,
-      lastSeen: serverTimestamp()
-    }, { merge: true });
-    show("mainScreen");
-    loadChats();
-  } else {
-    currentUser = null;
-    show("loginScreen");
-  }
-});
-
 // ---------------- CHATS ----------------
 function chatId(a, b) { return [a, b].sort().join("_"); }
 
@@ -169,7 +190,7 @@ async function loadChats() {
       item.innerHTML = `<div class="avatar">${(c.name||"?").charAt(0).toUpperCase()}</div>
         <div class="ci-body"><div class="ci-name"><span>${esc(c.name||"Chat")}</span><span class="ci-time">${timeStr(c.last)}</span></div>
         <div class="ci-last">${esc(c.lastMsg||"")}</div></div>`;
-      item.onclick = () => openConversation(c.peer, c.name);
+      item.onclick = () => openConversation(c.peer, c.name, c.type || "user");
       list.appendChild(item);
     });
   });
@@ -183,17 +204,17 @@ function timeStr(ts) {
 function esc(s) { return (s||"").replace(/[&<>]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m])); }
 
 // ---------------- CONVERSATION ----------------
-async function openConversation(peerUid, peerName) {
-  currentPeer = { uid: peerUid, name: peerName };
+async function openConversation(peerUid, peerName, type = "user") {
+  currentPeer = { uid: peerUid, name: peerName, type };
   $("convName").textContent = peerName;
   $("convAvatar").textContent = (peerName || "?").charAt(0).toUpperCase();
   showView("conversationView");
-  // peer presence
-  const pr = doc(db, "users", peerUid);
-  onSnapshot(pr, s => { const d = s.data(); $("convStatus").textContent = d && d.online ? "online" : "offline"; });
-  // messages
+  if (type === "user") {
+    const pr = doc(db, "users", peerUid);
+    onSnapshot(pr, s => { const d = s.data(); $("convStatus").textContent = d && d.online ? "online" : "offline"; });
+  } else { $("convStatus").textContent = "group"; }
   if (unsubMessages) unsubMessages();
-  const cid = chatId(currentUser.uid, peerUid);
+  const cid = (type === "group") ? peerUid : chatId(currentUser.uid, peerUid);
   const q = query(collection(db, "chats", cid, "messages"), orderBy("ts", "asc"));
   const box = $("messages"); box.innerHTML = "";
   unsubMessages = onSnapshot(q, snap => {
@@ -201,8 +222,10 @@ async function openConversation(peerUid, peerName) {
     snap.forEach(d => {
       const m = d.data();
       const div = document.createElement("div");
-      div.className = "msg " + (m.from === currentUser.uid ? "out" : "in");
-      div.innerHTML = esc(m.text) + `<span class="t">${timeStr(m.ts)}</span>`;
+      const mine = m.from === currentUser.uid;
+      div.className = "msg " + (mine ? "out" : "in");
+      const who = (type === "group" && !mine && m.fromName) ? `<b style="color:#7fd;">${esc(m.fromName)}:</b> ` : "";
+      div.innerHTML = who + esc(m.text) + `<span class="t">${timeStr(m.ts)}</span>`;
       box.appendChild(div);
     });
     box.scrollTop = box.scrollHeight;
@@ -215,10 +238,17 @@ $("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMess
 async function sendMessage() {
   const text = $("msgInput").value.trim();
   if (!text || !currentPeer) return;
-  const cid = chatId(currentUser.uid, currentPeer.uid);
-  await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, text, ts: serverTimestamp() });
-  await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: text }, { merge: true });
-  await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: text }, { merge: true });
+  if (currentPeer.type === "group") {
+    const cid = currentPeer.uid;
+    await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, fromName: currentUser.displayName || currentUser.phoneNumber, text, ts: serverTimestamp() });
+    await setDoc(doc(db, "groups", cid), { last: serverTimestamp(), lastMsg: text }, { merge: true });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", cid), { peer: cid, name: currentPeer.name, type: "group", last: serverTimestamp(), lastMsg: text }, { merge: true });
+  } else {
+    const cid = chatId(currentUser.uid, currentPeer.uid);
+    await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, text, ts: serverTimestamp() });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: text }, { merge: true });
+    await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: text }, { merge: true });
+  }
   $("msgInput").value = "";
 }
 
@@ -226,10 +256,19 @@ async function sendMessage() {
 $("newChatBtn").onclick = () => { $("peopleList").innerHTML = ""; showView("newChatView"); };
 $("newBackBtn").onclick = () => showView("chatsView");
 $("newSearchInput").addEventListener("input", async (e) => {
-  const q = e.target.value.trim();
+  const q = e.target.value.trim().toLowerCase();
+  if (q.length < 1) return;
+  const box = $("peopleList"); box.innerHTML = "";
+  // AI assistant contact
+  if ("ai".includes(q) || "assistant".includes(q) || "chat".includes(q)) {
+    const ai = document.createElement("div");
+    ai.className = "chat-item";
+    ai.innerHTML = `<div class="avatar" style="background:#00a884">AI</div><div class="ci-body"><div class="ci-name"><span>AI Assistant</span></div><div class="ci-last">Chat with AI</div></div>`;
+    ai.onclick = () => openAI();
+    box.appendChild(ai);
+  }
   if (q.length < 3) return;
   const snap = await getDocs(query(collection(db, "users"), where("phone", "==", q.startsWith("+") ? q : "+88" + q)));
-  const box = $("peopleList"); box.innerHTML = "";
   snap.forEach(d => {
     const u = d.data();
     if (u.uid === currentUser.uid) return;
@@ -248,7 +287,9 @@ $("callVideoBtn").onclick = () => startCall(true);
 let agoraClient = null, localTracks = { audio: null, video: null }, callChannel = null, callActive = false;
 async function startCall(video) {
   if (!currentPeer) return;
-  callChannel = chatId(currentUser.uid, currentPeer.uid);
+  callChannel = (currentPeer.type === "group") ? currentPeer.uid : chatId(currentUser.uid, currentPeer.uid);
+  try {   await setDoc(doc(db, "users", currentUser.uid, "calls", Date.now().toString()), { with: currentPeer.name, type: video ? "video" : "voice", at: serverTimestamp(), group: currentPeer.type === "group" }, { merge: true }); } catch (e) {}
+  setupCallChat(currentPeer);
   $("callName").textContent = currentPeer.name;
   $("callAvatar").textContent = (currentPeer.name || "?").charAt(0).toUpperCase();
   $("callState").textContent = "Connecting…";
@@ -321,8 +362,109 @@ async function endCall() {
   show("mainScreen");
 }
 
+// ---------------- STATUS / STORIES ----------------
+async function loadStatus() {
+  const me = await getDoc(doc(db, "users", currentUser.uid));
+  const md = me.data() || {};
+  $("myStatusAvatar").textContent = ((currentUser.displayName || currentUser.phoneNumber || "?").charAt(0) || "?").toUpperCase();
+  const myStatus = md.status && md.status.text ? md.status : null;
+  $("myStatusText").textContent = myStatus ? ("Updated " + timeStr(myStatus.at)) : "Tap to add";
+  const box = $("statusList"); box.innerHTML = "";
+  const snap = await getDocs(collection(db, "status"));
+  snap.forEach(d => {
+    const s = d.data();
+    if (d.id === currentUser.uid) return;
+    if (!s.text) return;
+    const item = document.createElement("div");
+    item.className = "chat-item";
+    item.innerHTML = `<div class="avatar" style="border:3px solid var(--teal)">${(s.name||"?").charAt(0).toUpperCase()}</div>
+      <div class="ci-body"><div class="ci-name"><span>${esc(s.name||"")}</span></div><div class="ci-last">${esc(s.text)}</div></div>`;
+    item.onclick = () => showStatus(s.name, s.text);
+    box.appendChild(item);
+  });
+}
+$("statusMyRow").onclick = () => {
+  const t = prompt("What's on your mind?");
+  if (t && t.trim()) setDoc(doc(db, "users", currentUser.uid), { status: { text: t.trim(), at: serverTimestamp() } }, { merge: true }).then(loadStatus);
+};
+$("newStatusBtn").onclick = () => $("statusMyRow").onclick();
+function showStatus(name, text) {
+  $("viewerTitle").textContent = name + "'s status";
+  $("viewerBody").innerHTML = `<div class="msg in" style="max-width:90%;align-self:center;margin-top:20px">${esc(text)}</div>`;
+  showView("viewerView");
+}
+$("myStatusAvatar").textContent = "?";
+
+// ---------------- GROUPS ----------------
+let grpMembers = [];
+$("newGroupTopBtn").onclick = () => { grpMembers = []; renderGrp(); showView("newGroupView"); };
+$("newGroupBtn").onclick = () => { grpMembers = []; renderGrp(); showView("newGroupView"); };
+$("grpBackBtn").onclick = () => showView("chatsView");
+async function grpSearch(phone) {
+  const snap = await getDocs(query(collection(db, "users"), where("phone", "==", phone.startsWith("+") ? phone : "+88" + phone)));
+  const box = $("grpMembers"); const found = [];
+  snap.forEach(d => { const u = d.data(); if (u.uid !== currentUser.uid) found.push(u); });
+  if (!found.length) { box.innerHTML = '<p style="color:#8696a0;padding:10px">No user found</p>'; return; }
+  box.innerHTML = "";
+  found.forEach(u => {
+    if (grpMembers.find(m => m.uid === u.uid)) return;
+    const item = document.createElement("div");
+    item.className = "chat-item";
+    item.innerHTML = `<div class="avatar">${(u.name||"?").charAt(0).toUpperCase()}</div><div class="ci-body"><div class="ci-name"><span>${esc(u.name)}</span></div><div class="ci-last">${esc(u.phone||"")}</div></div>`;
+    item.onclick = () => { grpMembers.push(u); renderGrp(); };
+    box.appendChild(item);
+  });
+}
+$("grpSearchInput").addEventListener("input", e => { const v = e.target.value.trim(); if (v.length >= 3) grpSearch(v); });
+function renderGrp() {
+  const box = $("grpMembers");
+  box.innerHTML = grpMembers.map((m, i) => `<div class="chat-item"><div class="avatar">${(m.name||"?").charAt(0).toUpperCase()}</div><div class="ci-body"><div class="ci-name"><span>${esc(m.name)}</span></div></div><button class="icon-btn" onclick="window.__rmGrp(${i})"><i class="fa-solid fa-xmark"></i></button></div>`).join("");
+}
+window.__rmGrp = (i) => { grpMembers.splice(i, 1); renderGrp(); };
+$("grpCreateBtn").onclick = async () => {
+  const name = $("grpNameInput").value.trim();
+  if (!name || !grpMembers.length) { toast("Add a name and members"); return; }
+  const members = [currentUser.uid, ...grpMembers.map(m => m.uid)];
+  const ref = await addDoc(collection(db, "groups"), { name, members, createdBy: currentUser.uid, last: serverTimestamp(), lastMsg: "Group created" });
+  for (const uid of members) await setDoc(doc(db, "users", uid, "chats", ref.id), { peer: ref.id, name, type: "group", last: serverTimestamp(), lastMsg: "Group created" }, { merge: true });
+  toast("Group created");
+  openConversation(ref.id, name, "group");
+};
+
+// ---------------- SETTINGS ----------------
+function loadSettings() {
+  const n = currentUser.displayName || currentUser.phoneNumber || currentUser.email || "You";
+  $("settingsName").textContent = n;
+  $("settingsPhone").textContent = currentUser.phoneNumber || currentUser.email || "";
+  $("settingsAvatar").textContent = (n.charAt(0) || "?").toUpperCase();
+  $("themeVal").textContent = document.body.classList.contains("light") ? "Light" : "Dark";
+}
+$("settingsProfile").onclick = () => {
+  const n = prompt("Display name:", $("settingsName").textContent);
+  if (n && n.trim()) { setDoc(doc(db, "users", currentUser.uid), { name: n.trim() }, { merge: true }); loadSettings(); }
+};
+$("setNameBtn").onclick = () => $("settingsProfile").onclick();
+$("setThemeBtn").onclick = () => { document.body.classList.toggle("light"); loadSettings(); };
+$("setLogoutBtn").onclick = () => signOut(auth);
+$("setAboutBtn").onclick = () => {
+  $("viewerTitle").textContent = "About AgoraMeet";
+  $("viewerBody").innerHTML = '<div class="msg in" style="max-width:90%;align-self:center;margin-top:20px">AgoraMeet v2.1 — WhatsApp-style messenger with Agora + Cloudflare calls and an AI assistant.<br><br>Built with Firebase, Agora, Capacitor.</div>';
+  showView("viewerView");
+};
+$("setCallsBtn").onclick = async () => {
+  const snap = await getDocs(query(collection(db, "users", currentUser.uid, "calls"), orderBy("at", "desc")));
+  $("viewerTitle").textContent = "Call history";
+  let html = "";
+  snap.forEach(d => { const c = d.data(); html += `<div class="chat-item"><div class="avatar" style="background:#2a3942">${c.type === "video" ? "🎥" : "📞"}</div><div class="ci-body"><div class="ci-name"><span>${esc(c.with || "Call")}</span></div><div class="ci-last">${c.type} • ${timeStr(c.at)}</div></div></div>`; });
+  $("viewerBody").innerHTML = html || '<p style="color:#8696a0;padding:16px">No calls yet</p>';
+  showView("viewerView");
+};
+$("viewerBackBtn").onclick = () => showView("chatsView");
+
 // ---------------- AI ASSISTANT (NaraRouter via server proxy) ----------------
-const aiHistory = [{ role: "system", content: "You are AgoraMeet AI, a helpful assistant inside a messaging app." }];
+const AI_SYSTEM = "You are AgoraMeet AI, a helpful assistant inside a messaging app.";
+let aiHistory = [{ role: "system", content: AI_SYSTEM }];
+let aiModel = "tencent-hy3";
 function aiBubble(role, text) {
   const div = document.createElement("div");
   div.className = "msg " + (role === "user" ? "out" : "in");
@@ -330,6 +472,9 @@ function aiBubble(role, text) {
   $("aiMessages").appendChild(div);
   $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
 }
+$("aiModel").onchange = () => { aiModel = $("aiModel").value; };
+$("aiClearBtn").onclick = () => { aiHistory = [{ role: "system", content: AI_SYSTEM }]; $("aiMessages").innerHTML = ""; toast("Chat cleared"); };
+$("aiBackBtn").onclick = () => showView("chatsView");
 $("aiSendBtn").onclick = async () => {
   const text = $("aiInput").value.trim();
   if (!text) return;
@@ -338,7 +483,7 @@ $("aiSendBtn").onclick = async () => {
   aiHistory.push({ role: "user", content: text });
   $("aiStatus").textContent = "typing…";
   try {
-    const r = await fetch("/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory }) });
+    const r = await fetch("/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
     const data = await r.json();
     const reply = data.reply || data.error || "(no response)";
     aiBubble("assistant", reply);
@@ -349,6 +494,27 @@ $("aiSendBtn").onclick = async () => {
   $("aiStatus").textContent = "ready";
 };
 $("aiInput").addEventListener("keydown", e => { if (e.key === "Enter") $("aiSendBtn").onclick(); });
+// AI as a contact (open from chats search) — reuse aiView
+function openAI() { aiModel = $("aiModel").value; showView("aiView"); $("aiInput").focus(); }
+
+// ---------------- IN-CALL CHAT ----------------
+let callPeer = null;
+function setupCallChat(peer) {
+  callPeer = peer;
+  $("callChatBox").innerHTML = "";
+  $("callChatWrap").classList.remove("hidden");
+}
+$("callChatSend").onclick = async () => {
+  const t = $("callChatInput").value.trim(); if (!t || !callPeer) return;
+  $("callChatInput").value = "";
+  const div = document.createElement("div"); div.className = "msg out"; div.textContent = t;
+  $("callChatBox").appendChild(div); $("callChatBox").scrollTop = $("callChatBox").scrollHeight;
+  const cid = (callPeer.type === "group") ? callPeer.uid : chatId(currentUser.uid, callPeer.uid);
+  await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, fromName: currentUser.displayName || currentUser.phoneNumber, text: t, ts: serverTimestamp() });
+};
 
 // ---------------- BOOT ----------------
-loadFirebase().catch(e => toast("Firebase load failed: " + e.message));
+loadFirebase().catch(e => {
+  err("App failed to load: " + e.message);
+  toast(e.message);
+});

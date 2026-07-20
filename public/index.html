@@ -24,8 +24,8 @@
         <div id="phoneStep">
           <label>Phone number</label>
           <div class="phone-row">
-            <span class="cc">+88</span>
-            <input id="phoneInput" type="tel" placeholder="01XXXXXXXXX" autocomplete="off">
+            <select id="countryCode" class="cc-select"></select>
+            <input id="phoneInput" type="tel" placeholder="phone number" autocomplete="off">
           </div>
           <button id="sendOtpBtn" class="btn-primary">Continue</button>
           <button id="googleBtn" class="btn-google"><i class="fa-brands fa-google"></i> Continue with Google</button>
@@ -57,7 +57,7 @@
         <div class="topbar-title"><img src="icon.svg" width="26" height="26" style="vertical-align:-6px;margin-right:8px;border-radius:7px">AgoraMeet</div>
         <div class="topbar-actions">
           <button id="newChatBtn" title="New chat"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button id="logoutBtn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
+          <button id="newGroupTopBtn" title="New group"><i class="fa-solid fa-users"></i></button>
         </div>
       </header>
 
@@ -66,6 +66,60 @@
         <div id="chatsView" class="view active">
           <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="searchInput" placeholder="Search"></div>
           <div id="chatList" class="chat-list"></div>
+        </div>
+
+        <!-- Status / Stories -->
+        <div id="statusView" class="view">
+          <div class="search" style="justify-content:space-between">
+            <span style="color:var(--text);font-weight:600">Status</span>
+            <button id="newStatusBtn" class="icon-btn" title="Post status"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <div id="statusMyRow" class="chat-item" style="border-bottom:1px solid #1c282f">
+            <div class="avatar" id="myStatusAvatar" style="border:3px solid var(--teal)">?</div>
+            <div class="ci-body"><div class="ci-name"><span>My Status</span></div><div class="ci-last" id="myStatusText">Tap to add</div></div>
+          </div>
+          <div id="statusList" class="chat-list"></div>
+        </div>
+
+        <!-- AI Assistant -->
+        <div id="aiView" class="view">
+          <div class="conv-header">
+            <button id="aiBackBtn" class="icon-btn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-avatar" style="background:#00a884">AI</div>
+            <div class="conv-meta">
+              <div class="conv-name">AI Assistant</div>
+              <div class="conv-status" id="aiStatus">ready</div>
+            </div>
+            <select id="aiModel" class="ai-model-select">
+              <option value="tencent-hy3">tencent-hy3</option>
+              <option value="mistral-medium-3-5">mistral-medium-3-5</option>
+              <option value="mistral-large">mistral-large</option>
+              <option value="glm-5.2-free">glm-5.2-free</option>
+              <option value="agnes-2.0-flash">agnes-2.0-flash</option>
+            </select>
+            <button id="aiClearBtn" class="icon-btn" title="Clear"><i class="fa-solid fa-trash"></i></button>
+          </div>
+          <div id="aiMessages" class="messages"></div>
+          <div class="composer">
+            <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
+            <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div id="settingsView" class="view">
+          <div class="search" style="color:var(--text);font-weight:600">Settings</div>
+          <div id="settingsProfile" class="chat-item">
+            <div class="avatar" id="settingsAvatar">?</div>
+            <div class="ci-body"><div class="ci-name"><span id="settingsName">You</span></div><div class="ci-last" id="settingsPhone"></div></div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-item" id="setNameBtn"><i class="fa-solid fa-user"></i><span>Edit profile name</span></div>
+            <div class="settings-item" id="setThemeBtn"><i class="fa-solid fa-palette"></i><span>Theme</span><span class="set-val" id="themeVal">Dark</span></div>
+            <div class="settings-item" id="setCallsBtn"><i class="fa-solid fa-phone"></i><span>Call history</span></div>
+            <div class="settings-item" id="setAboutBtn"><i class="fa-solid fa-circle-info"></i><span>About AgoraMeet</span></div>
+            <div class="settings-item danger" id="setLogoutBtn"><i class="fa-solid fa-right-from-bracket"></i><span>Log out</span></div>
+          </div>
         </div>
 
         <!-- Conversation -->
@@ -89,37 +143,45 @@
           </div>
         </div>
 
+        <!-- Group create -->
+        <div id="newGroupView" class="view">
+          <div class="conv-header">
+            <button id="grpBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name">New group</div>
+          </div>
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="grpSearchInput" placeholder="Add members by phone"></div>
+          <div class="grp-name-row"><input id="grpNameInput" placeholder="Group name"></div>
+          <div id="grpMembers" class="chat-list"></div>
+          <button id="grpCreateBtn" class="btn-primary" style="margin:14px">Create group</button>
+        </div>
+
         <!-- New chat -->
         <div id="newChatView" class="view">
           <div class="conv-header">
             <button id="newBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
             <div class="conv-name">New chat</div>
+            <button id="newGroupBtn" class="icon-btn" title="New group"><i class="fa-solid fa-users"></i></button>
           </div>
           <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="newSearchInput" placeholder="Find people by phone"></div>
           <div id="peopleList" class="chat-list"></div>
         </div>
 
-        <!-- AI Assistant -->
-        <div id="aiView" class="view">
+        <!-- Generic viewer (status / about) -->
+        <div id="viewerView" class="view">
           <div class="conv-header">
-            <div class="conv-avatar" style="background:#00a884">AI</div>
-            <div class="conv-meta">
-              <div class="conv-name">AI Assistant</div>
-              <div class="conv-status" id="aiStatus">ready</div>
-            </div>
+            <button id="viewerBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name" id="viewerTitle">Status</div>
           </div>
-          <div id="aiMessages" class="messages"></div>
-          <div class="composer">
-            <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
-            <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
-          </div>
+          <div id="viewerBody" class="messages"></div>
         </div>
       </div>
 
       <!-- Bottom navigation -->
       <nav class="bottomnav">
         <button class="bn active" data-view="chatsView"><i class="fa-solid fa-comment"></i><span>Chats</span></button>
+        <button class="bn" data-view="statusView"><i class="fa-solid fa-circle-notch"></i><span>Status</span></button>
         <button class="bn" data-view="aiView"><i class="fa-solid fa-robot"></i><span>AI</span></button>
+        <button class="bn" data-view="settingsView"><i class="fa-solid fa-gear"></i><span>Settings</span></button>
       </nav>
     </section>
 
@@ -138,6 +200,13 @@
           <button id="callMuteBtn" class="cc"><i class="fa-solid fa-microphone"></i></button>
           <button id="callEndBtn" class="cc cc-end"><i class="fa-solid fa-phone-slash"></i></button>
           <button id="callCamBtn" class="cc"><i class="fa-solid fa-video"></i></button>
+        </div>
+        <div id="callChatWrap" class="hidden">
+          <div id="callChatBox" class="messages" style="position:absolute;bottom:120px;left:0;right:0;top:auto;max-height:40%;background:transparent;"></div>
+          <div class="composer" style="position:absolute;bottom:0;left:0;right:0;">
+            <input id="callChatInput" placeholder="Message in call…">
+            <button id="callChatSend"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
         </div>
       </div>
     </section>
