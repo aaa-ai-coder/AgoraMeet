@@ -576,8 +576,62 @@ $("chatTab").addEventListener("click", () => {
 $("participantsTab").addEventListener("click", () => {
   $("participantsTab").className = "flex-1 py-3 text-center text-sm font-semibold border-b-2 border-blue-500 text-white";
   $("chatTab").className = "flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent";
-  $("participantsContent").classList.remove("hidden"); $("chatContent").classList.add("hidden");
+  $("aiTab").className = "flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent";
+  $("participantsContent").classList.remove("hidden"); $("chatContent").classList.add("hidden"); $("aiContent").classList.add("hidden");
   updateParticipantsList();
+});
+$("aiTab").addEventListener("click", () => {
+  $("aiTab").className = "flex-1 py-3 text-center text-sm font-semibold border-b-2 border-blue-500 text-white";
+  $("chatTab").className = "flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent";
+  $("participantsTab").className = "flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent";
+  $("aiContent").classList.remove("hidden"); $("chatContent").classList.add("hidden"); $("participantsContent").classList.add("hidden");
+  loadAiModels();
+});
+
+// ---------- AI Assistant ----------
+let aiMessages = [];
+async function loadAiModels() {
+  const sel = $("aiModel");
+  if (sel.options.length) return;
+  const data = await api("/api/ai/models");
+  if (data.error || !data.models) { sel.innerHTML = '<option>AI unavailable</option>'; return; }
+  sel.innerHTML = "";
+  data.models.forEach(m => { const o = document.createElement("option"); o.value = m; o.textContent = m; sel.appendChild(o); });
+}
+function appendAiMessage(role, text) {
+  const wrap = document.createElement("div");
+  wrap.className = "flex flex-col space-y-1 fade-in";
+  const isSelf = role === "user";
+  wrap.innerHTML = `<div class="flex items-baseline ${isSelf ? "justify-end" : "justify-start"} space-x-2">
+      <span class="text-xs font-bold ${isSelf ? "text-blue-400" : "text-indigo-400"}">${isSelf ? "You" : "AI"}</span></div>
+    <div class="px-3 py-2 rounded-xl max-w-[90%] break-words ${isSelf ? "bg-blue-600/35 border border-blue-500/30 self-end" : "bg-white/5 border border-white/10 self-start"}">${escapeHTML(text)}</div>`;
+  $("aiMessages").appendChild(wrap);
+  $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
+}
+$("aiForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("aiInput").value.trim();
+  if (!text) return;
+  appendAiMessage("user", text);
+  aiMessages.push({ role: "user", content: text });
+  $("aiInput").value = "";
+  const model = $("aiModel").value;
+  const thinking = document.createElement("div");
+  thinking.className = "text-xs text-slate-500 italic"; thinking.innerText = "AI is thinking…";
+  $("aiMessages").appendChild(thinking);
+  try {
+    const data = await api("/api/ai/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: aiMessages })
+    });
+    thinking.remove();
+    if (data.error) { appendAiMessage("assistant", "Error: " + data.error); return; }
+    appendAiMessage("assistant", data.reply || "(no reply)");
+    aiMessages.push({ role: "assistant", content: data.reply || "" });
+  } catch (err) {
+    thinking.remove();
+    appendAiMessage("assistant", "Error: could not reach AI service");
+  }
 });
 $("chatForm").addEventListener("submit", (e) => {
   e.preventDefault();

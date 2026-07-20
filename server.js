@@ -148,6 +148,52 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', appIdConfigured: !!APP_ID, certificateConfigured: !!APP_CERTIFICATE, activeRooms: activeRooms.size });
 });
 
+// ---------- AI Assistant proxy ----------
+// Keeps the provider API key server-side (never exposed to the APK).
+// Configure via env: NARA_BASE_URL (e.g. https://<host>/v1) and NARA_API_KEY.
+const NARA_BASE_URL = (process.env.NARA_BASE_URL || "").replace(/\/$/, "");
+const NARA_API_KEY = process.env.NARA_API_KEY || "";
+const AI_MODELS = [
+  "tencent-hy3",
+  "mistral-medium-3-5",
+  "mistral-large",
+  "glm-5.2-free",
+  "agnes-2.0-flash"
+];
+
+app.get('/api/ai/models', (req, res) => {
+  res.json({ models: AI_MODELS, configured: !!NARA_API_KEY && !!NARA_BASE_URL });
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+  if (!NARA_BASE_URL || !NARA_API_KEY) {
+    return res.status(503).json({ error: "AI not configured on server" });
+  }
+  const { model, messages } = req.body || {};
+  if (!model || !Array.isArray(messages)) {
+    return res.status(400).json({ error: "model and messages required" });
+  }
+  try {
+    const upstream = await fetch(`${NARA_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${NARA_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ model, messages, stream: false })
+    });
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: data.error?.message || "AI provider error", raw: data });
+    }
+    const reply = data.choices?.[0]?.message?.content || "";
+    res.json({ reply });
+  } catch (e) {
+    console.error("AI proxy error:", e.message);
+    res.status(502).json({ error: "Failed to reach AI provider" });
+  }
+});
+
 // APK downloads are hosted on the GitHub Release (artifacts), not on this server,
 // to keep the VM disk usage low. See README for the download links.
 

@@ -192,7 +192,8 @@
     <div id="sidePanel" class="w-full md:w-80 border-l border-white/5 glass-card flex flex-col h-full hidden">
       <div class="flex border-b border-white/5">
         <button id="chatTab" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-blue-500 text-white">Chat</button>
-        <button id="participantsTab" class="flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent">Participants (<span id="participantCount">1</span>)</button>
+        <button id="aiTab" class="flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent"><i class="fa-solid fa-robot mr-1"></i>AI</button>
+        <button id="participantsTab" class="flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent">People (<span id="participantCount">1</span>)</button>
       </div>
       <div id="chatContent" class="flex-1 flex flex-col overflow-hidden h-[300px] md:h-auto">
         <div id="chatMessages" class="flex-1 p-4 space-y-4 overflow-y-auto text-sm">
@@ -202,6 +203,19 @@
           <form id="chatForm" class="flex space-x-2">
             <input type="text" id="chatInput" placeholder="Send message..." autocomplete="off" class="flex-1 px-3 py-2 text-sm rounded-lg glass-input">
             <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-lg text-white transition"><i class="fa-solid fa-paper-plane"></i></button>
+          </form>
+        </div>
+      </div>
+      <div id="aiContent" class="flex-1 flex flex-col overflow-hidden h-[300px] md:h-auto hidden">
+        <div class="p-3 border-b border-white/5 bg-black/20">
+          <label class="text-[10px] uppercase tracking-wider text-slate-400">Model</label>
+          <select id="aiModel" class="w-full mt-1 px-2 py-2 rounded-lg glass-input text-sm"></select>
+        </div>
+        <div id="aiMessages" class="flex-1 p-4 space-y-4 overflow-y-auto text-sm"></div>
+        <div class="p-4 border-t border-white/5 bg-black/20">
+          <form id="aiForm" class="flex space-x-2">
+            <input type="text" id="aiInput" placeholder="Ask the AI assistant…" autocomplete="off" class="flex-1 px-3 py-2 text-sm rounded-lg glass-input">
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-white transition"><i class="fa-solid fa-paper-plane"></i></button>
           </form>
         </div>
       </div>
