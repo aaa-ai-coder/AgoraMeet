@@ -9,7 +9,7 @@ import {
   addDoc, getDocs, serverTimestamp, getDoc, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2.3.1";
+const VERSION = "2.3.2";
 const $ = (id) => document.getElementById(id);
 const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.onrender.com";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
@@ -145,6 +145,7 @@ async function pollTelegramStatus() {
   } catch (e) {}
 }
 $("sendOtpBtn").onclick = startTelegramVerify;
+$("tgCheck").onclick = () => { if (tgPhone) { $("tgStatus").textContent = "Checking…"; pollTelegramStatus(); } };
 $("resendLink").onclick = () => { if (tgPollTimer) clearInterval(tgPollTimer); tgPollTimer = null; $("otpStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
 
 $("emailBtn").onclick = async () => {
