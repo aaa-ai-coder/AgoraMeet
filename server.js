@@ -1,7 +1,5 @@
 // server.js
 const express = require('express');
-const path = require('path');
-const fs = require('fs');
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
 require('dotenv').config();
 
@@ -70,20 +68,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', appIdConfigured: !!APP_ID, certificateConfigured: !!APP_CERTIFICATE });
 });
 
-// APK download routes (served directly, no redirect — reliable for phone download)
-function serveApk(res, filePath, fileName) {
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'APK not found. Build it with: cd android && ./gradlew assembleDebug' });
-  }
-  res.download(filePath, fileName);
-}
-
-app.get('/get-agorameet-one.apk', (req, res) => {
-  serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet-v1.2.0.apk'), 'AgoraMeet-v1.2.0.apk');
-});
-app.get('/get-agorameet-two.apk', (req, res) => {
-  serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet2-v1.2.0.apk'), 'AgoraMeet2-v1.2.0.apk');
-});
+// APK downloads are hosted on the GitHub Release (artifacts), not on this server,
+// to keep the VM disk usage low. See README for the download links.
 
 app.listen(PORT, () => {
   console.log(`AgoraMeet token server running at http://localhost:${PORT}`);
