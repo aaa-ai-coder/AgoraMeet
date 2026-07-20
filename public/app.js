@@ -1,7 +1,7 @@
-// app.js - AgoraMeet (advanced build)
-// Features: share links, recent rooms, nearby discovery, connection quality,
-// theme toggle, host controls (mute-all/kick/end-room), call-ended screen,
-// graceful offline degradation, explicit device permissions.
+// app.js - AgoraMeet (advanced build v2)
+// Features: pre-join device preview, smooth permissions, share links, recent rooms,
+// nearby discovery, connection quality, theme, host controls (mute-all/kick/end-room),
+// reactions, raise hand, call timer, reconnect banner, join/leave toasts, settings.
 
 let client = null;
 let localTracks = { videoTrack: null, audioTrack: null };
@@ -15,12 +15,17 @@ let channelName = "";
 let uid = null;
 let displayName = "";
 let isHost = true;
+let callStartTs = null;
+let timerInterval = null;
+let handsRaised = new Set();
 
 const API_BASE = (location.protocol === "file:") ? "https://agorameet-server.onrender.com" : "";
 const FALLBACK_BASE = "https://agorameet-server.onrender.com";
 
 let lobbyMicEnabled = true;
 let lobbyCamEnabled = true;
+let mirrorVideo = true;
+let previewStream = null;
 
 let chatStreamId = null;
 const textEncoder = new TextEncoder();
@@ -29,7 +34,6 @@ const deletedRooms = new Set();
 
 const $ = (id) => document.getElementById(id);
 
-// ---- Safe API helper: never throws, returns parsed JSON or {error} ----
 async function api(path, opts) {
   const urls = [API_BASE, FALLBACK_BASE].filter(Boolean);
   for (const base of urls) {
@@ -39,7 +43,7 @@ async function api(path, opts) {
       const ct = r.headers.get("content-type") || "";
       if (!ct.includes("json")) continue;
       return await r.json();
-    } catch (e) { /* try next base */ }
+    } catch (e) {}
   }
   return { error: "network" };
 }
@@ -111,7 +115,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setInterval(refreshNearby, 8000);
 });
 
-// ---------- Nearby discovery (fail-safe) ----------
+// ---------- Nearby discovery ----------
 async function refreshNearby() {
   const box = $("nearbyRooms");
   if (!box) return;
@@ -153,7 +157,7 @@ function startStats() {
 }
 function stopStats() { if (statsTimer) { clearInterval(statsTimer); statsTimer = null; } }
 
-// ---------- Presence (fail-safe) ----------
+// ---------- Presence ----------
 async function pingPresence(action) {
   return api("/api/presence", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -173,7 +177,13 @@ function setupClientEvents() {
   client.on("user-unpublished", (user, mediaType) => {
     if (mediaType === "video" && remoteUsers[user.uid]) { delete remoteUsers[user.uid]; updateVideoGrid(); updateParticipantsList(); }
   });
-  client.on("user-left", (user) => { delete remoteUsers[user.uid]; updateVideoGrid(); updateParticipantsList(); });
+  client.on("user-left", (user) => {
+    delete remoteUsers[user.uid];
+    handsRaised.delete(user.uid);
+    updateVideoGrid(); updateParticipantsList(); updateHands();
+    showToast(`Participant ${user.uid} left`, "info");
+  });
+  client.on("user-joined", (user) => { showToast(`Participant ${user.uid} joined`, "success"); });
   client.on("stream-message", (uid, data) => {
     try {
       const msg = JSON.parse(textDecoder.decode(data));
@@ -181,11 +191,16 @@ function setupClientEvents() {
       else if (msg.type === "host-mute-all") { if (localTracks.audioTrack && !localTracks.audioTrack.muted) { localTracks.audioTrack.setMuted(true); setMic(false); showToast("Host muted everyone", "info"); } }
       else if (msg.type === "host-kick" && msg.uid === uid) { showToast("You were removed by the host", "error"); leaveMeeting(true); }
       else if (msg.type === "host-end-room") { showToast("The room was ended by the host", "error"); leaveMeeting(true); }
+      else if (msg.type === "reaction") { floatReaction(msg.emoji); }
+      else if (msg.type === "raise-hand") { if (msg.on) handsRaised.add(uid); else handsRaised.delete(uid); updateHands(); }
     } catch (e) { console.error(e); }
   });
   client.enableAudioVolumeIndicator();
   client.on("volume-indicator", (volumes) => { volumes.forEach((v) => { const el = $(`video-${v.uid}`); if (el) el.classList.toggle("active-speaker", v.level > 5); }); });
-  client.on("connection-state-change", (cur) => { if (cur === "DISCONNECTED" && channelName) showToast("Connection lost — reconnecting…", "error"); });
+  client.on("connection-state-change", (cur, prev) => {
+    if (cur === "RECONNECTING" || cur === "DISCONNECTED") { $("reconnectBanner").classList.remove("hidden"); }
+    else { $("reconnectBanner").classList.add("hidden"); }
+  });
 }
 
 // ---------- Lobby toggles ----------
@@ -200,21 +215,71 @@ $("toggleLobbyCam").addEventListener("click", () => {
   $("lobbyCamText").innerText = lobbyCamEnabled ? "Camera On" : "Camera Off";
 });
 
-// ---------- Permissions ----------
-async function ensurePermissions() {
+// ---------- Permissions + pre-join preview ----------
+async function requestPreview() {
+  const err = $("previewError");
+  if (err) err.classList.add("hidden");
   try {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: lobbyMicEnabled, video: lobbyCamEnabled
-      });
-      stream.getTracks().forEach(t => t.stop()); // release; Agora will re-acquire
-      return true;
-    }
+    previewStream = await navigator.mediaDevices.getUserMedia({ audio: lobbyMicEnabled, video: lobbyCamEnabled });
+    const v = $("previewVideo");
+    v.srcObject = previewStream;
+    v.muted = true;
+    v.play().catch(() => {});
+    applyMirror();
+    $("previewScreen").classList.remove("hidden");
+    $("lobbyScreen").classList.add("hidden");
+    // live mic level meter
+    const audio = previewStream.getAudioTracks()[0];
+    if (audio) startMicMeter(previewStream);
   } catch (e) {
-    showToast("Allow microphone/camera permission to join", "error");
-    return false;
+    if (err) { err.textContent = "Permission denied. Enable microphone/camera in your phone settings, then retry."; err.classList.remove("hidden"); }
+    showToast("Allow camera & microphone to continue", "error");
   }
-  return true;
+}
+function stopPreview() {
+  if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null; }
+  if (timerMic) { clearInterval(timerMic); timerMic = null; }
+  $("previewScreen").classList.add("hidden");
+  $("lobbyScreen").classList.remove("hidden");
+}
+$("enableDevicesBtn") && $("enableDevicesBtn").addEventListener("click", requestPreview);
+$("previewBackBtn") && $("previewBackBtn").addEventListener("click", stopPreview);
+$("togglePreviewMic").addEventListener("click", () => {
+  if (!previewStream) return;
+  const t = previewStream.getAudioTracks()[0];
+  if (t) { t.enabled = !t.enabled; lobbyMicEnabled = t.enabled; }
+  $("togglePreviewMic").className = lobbyMicEnabled ? "control-btn bg-white/10 hover:bg-white/15 text-white" : "control-btn bg-red-500/20 border border-red-500/30 text-red-500";
+  $("togglePreviewMic").innerHTML = lobbyMicEnabled ? '<i class="fa-solid fa-microphone text-lg"></i>' : '<i class="fa-solid fa-microphone-slash text-lg"></i>';
+});
+$("togglePreviewCam").addEventListener("click", () => {
+  if (!previewStream) return;
+  const t = previewStream.getVideoTracks()[0];
+  if (t) { t.enabled = !t.enabled; lobbyCamEnabled = t.enabled; }
+  $("togglePreviewCam").className = lobbyCamEnabled ? "control-btn bg-white/10 hover:bg-white/15 text-white" : "control-btn bg-red-500/20 border border-red-500/30 text-red-500";
+  $("togglePreviewCam").innerHTML = lobbyCamEnabled ? '<i class="fa-solid fa-video text-lg"></i>' : '<i class="fa-solid fa-video-slash text-lg"></i>';
+  if (!lobbyCamEnabled) $("previewVideo").style.opacity = 0.15; else $("previewVideo").style.opacity = 1;
+});
+$("mirrorToggle").addEventListener("change", () => { mirrorVideo = $("mirrorToggle").checked; applyMirror(); });
+function applyMirror() { const v = $("previewVideo"); if (v) v.style.transform = mirrorVideo ? "scaleX(-1)" : "none"; }
+let timerMic = null;
+function startMicMeter(stream) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    const ac = new AC();
+    const src = ac.createMediaStreamSource(stream);
+    const analyser = ac.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    timerMic = setInterval(() => {
+      analyser.getByteFrequencyData(data);
+      let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
+      const lvl = Math.min(100, Math.round(sum / data.length / 2));
+      const bar = $("micMeter");
+      if (bar) { bar.style.width = lvl + "%"; bar.className = `h-full rounded-full ${lvl > 10 ? "bg-emerald-400" : "bg-slate-600"} transition-all`; }
+    }, 100);
+  } catch (e) {}
 }
 
 // ---------- Join ----------
@@ -223,17 +288,11 @@ $("joinForm").addEventListener("submit", async (e) => {
   channelName = $("roomName").value.trim().toLowerCase();
   displayName = $("displayName").value.trim();
   if (!channelName || !displayName) return;
-
   if (deletedRooms.has(channelName)) { showToast("This room was ended by the host", "error"); return; }
 
   const joinBtn = $("joinBtn");
   joinBtn.disabled = true;
   joinBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> <span>Connecting…</span>`;
-  showLoading("Requesting device permission…");
-
-  const permitted = await ensurePermissions();
-  if (!permitted) { joinBtn.disabled = false; joinBtn.innerHTML = `<span>Join Meeting</span> <i class="fa-solid fa-arrow-right"></i>`; hideLoading(); return; }
-
   showLoading("Fetching secure token…");
   try {
     const data = await api(`/api/token?channel=${encodeURIComponent(channelName)}`);
@@ -248,26 +307,53 @@ $("joinForm").addEventListener("submit", async (e) => {
     try { chatStreamId = client.createDataStream({ reliable: true, ordered: true }); } catch (e) { console.warn(e); }
 
     const tracks = [];
-    try {
-      if (lobbyMicEnabled) { localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack(); tracks.push(localTracks.audioTrack); $("localMicIndicator").className = "fa-solid fa-microphone text-emerald-400"; }
-      else $("localMicIndicator").className = "fa-solid fa-microphone-slash text-red-500";
-    } catch (e) { showToast("Microphone unavailable", "error"); }
-    try {
-      if (lobbyCamEnabled) { localTracks.videoTrack = await AgoraRTC.createCameraVideoTrack(); tracks.push(localTracks.videoTrack); $("localAvatar").classList.add("hidden"); localTracks.videoTrack.play("localVideo"); }
-      else showLocalAvatar();
-    } catch (e) { showToast("Camera unavailable", "error"); showLocalAvatar(); }
+    // Reuse preview tracks if available & enabled
+    if (previewStream) {
+      const vt = previewStream.getVideoTracks()[0];
+      const at = previewStream.getAudioTracks()[0];
+      try {
+        if (at && lobbyMicEnabled) {
+          localTracks.audioTrack = AgoraRTC.createMicrophoneAudioTrack();
+          tracks.push(localTracks.audioTrack);
+        }
+      } catch (e) {}
+      try {
+        if (vt && lobbyCamEnabled) {
+          localTracks.videoTrack = AgoraRTC.createCameraVideoTrack();
+          tracks.push(localTracks.videoTrack);
+        }
+      } catch (e) {}
+      previewStream.getTracks().forEach(t => t.stop()); previewStream = null;
+      if (timerMic) { clearInterval(timerMic); timerMic = null; }
+    } else {
+      try {
+        if (lobbyMicEnabled) {
+          localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+          tracks.push(localTracks.audioTrack);
+        }
+      } catch (e) { showToast("Microphone unavailable", "error"); }
+      try {
+        if (lobbyCamEnabled) {
+          localTracks.videoTrack = await AgoraRTC.createCameraVideoTrack();
+          tracks.push(localTracks.videoTrack);
+        }
+      } catch (e) { showToast("Camera unavailable", "error"); }
+    }
+    if (localTracks.audioTrack) $("localMicIndicator").className = "fa-solid fa-microphone text-emerald-400"; else $("localMicIndicator").className = "fa-solid fa-microphone-slash text-red-500";
+    if (localTracks.videoTrack) { $("localAvatar").classList.add("hidden"); localTracks.videoTrack.play("localVideo"); } else showLocalAvatar();
 
     if (tracks.length) await client.publish(tracks);
 
-    // Decide host: server returns whether room already existed
     const pres = await pingPresence("join");
     if (pres.ended) { showToast("This room was ended by the host", "error"); await leaveMeeting(true); return; }
     isHost = !pres.existed;
 
     addRecentRoom(channelName, displayName);
     startStats();
+    startTimer();
 
     $("lobbyScreen").classList.add("hidden");
+    $("previewScreen").classList.add("hidden");
     $("meetingScreen").classList.remove("hidden");
     $("endedScreen").classList.add("hidden");
     $("connectionStatus").classList.remove("hidden"); $("connectionStatus").classList.add("flex");
@@ -289,6 +375,18 @@ $("joinForm").addEventListener("submit", async (e) => {
   } finally { hideLoading(); }
 });
 
+function startTimer() {
+  callStartTs = Date.now();
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - callStartTs) / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    $("callTimer").innerText = `${mm}:${ss}`;
+  }, 1000);
+}
+function stopTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
+
 function showLocalAvatar() {
   $("localAvatar").classList.remove("hidden");
   $("localAvatarLetter").innerText = displayName ? displayName.charAt(0).toUpperCase() : "?";
@@ -307,8 +405,9 @@ function updateVideoGrid() {
     const div = document.createElement("div");
     div.id = `video-${user.uid}`;
     div.className = "video-container h-full min-h-[250px] flex items-center justify-center remote-video-frame";
+    const hand = handsRaised.has(user.uid) ? '<span class="absolute top-3 left-3 text-xl">✋</span>' : "";
     const kick = isHost ? `<button class="kick-btn absolute top-3 right-3 bg-red-600/80 hover:bg-red-500 text-white text-xs px-2 py-1 rounded" data-uid="${user.uid}"><i class="fa-solid fa-user-xmark"></i></button>` : "";
-    div.innerHTML = `<div id="player-${user.uid}" class="w-full h-full"></div>${kick}
+    div.innerHTML = `<div id="player-${user.uid}" class="w-full h-full"></div>${hand}${kick}
       <div class="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10 text-xs font-semibold"><span>Participant ${user.uid}</span></div>`;
     grid.appendChild(div);
     if (user.videoTrack) user.videoTrack.play(`player-${user.uid}`);
@@ -325,9 +424,10 @@ function updateParticipantsList() {
   remotes.forEach((user) => {
     const el = document.createElement("div");
     el.className = "flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5";
+    const hand = handsRaised.has(user.uid) ? '<span class="text-lg mr-1">✋</span>' : "";
     el.innerHTML = `<div class="flex items-center space-x-3">
         <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-xs">P</div>
-        <span class="text-sm font-medium">Participant ${user.uid}</span></div>
+        <span class="text-sm font-medium">${hand}Participant ${user.uid}</span></div>
       <div class="flex items-center space-x-2 text-slate-400">
         <i class="fa-solid ${user.hasAudio ? "fa-microphone text-emerald-400" : "fa-microphone-slash text-red-500"} text-xs"></i>
         <i class="fa-solid ${user.hasVideo ? "fa-video text-emerald-400" : "fa-video-slash text-red-500"} text-xs"></i>
@@ -337,6 +437,11 @@ function updateParticipantsList() {
     if (kb) kb.addEventListener("click", () => hostKick(user.uid));
     list.appendChild(el);
   });
+}
+function updateHands() {
+  const n = handsRaised.size;
+  $("handCount").innerText = n ? `${n} hand(s) raised` : "";
+  $("raiseHandBtn").className = handsRaised.has(uid) ? "control-btn bg-amber-500/20 border border-amber-500/30 text-amber-400" : "control-btn bg-white/10 hover:bg-white/15 text-white";
 }
 
 // ---------- Host controls ----------
@@ -367,6 +472,35 @@ function hostEndRoom() {
 }
 $("hostMuteAllBtn") && $("hostMuteAllBtn").addEventListener("click", hostMuteAll);
 $("hostEndRoomBtn") && $("hostEndRoomBtn").addEventListener("click", hostEndRoom);
+
+// ---------- Reactions ----------
+function sendReaction(emoji) {
+  floatReaction(emoji);
+  hostBroadcast("reaction", { emoji });
+}
+function floatReaction(emoji) {
+  const layer = $("reactionLayer");
+  if (!layer) return;
+  const el = document.createElement("div");
+  el.className = "absolute text-4xl pointer-events-none";
+  el.style.left = (10 + Math.random() * 70) + "%";
+  el.style.bottom = "80px";
+  el.innerText = emoji;
+  el.style.animation = "floatUp 2.5s ease-out forwards";
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+["react1","react2","react3","react4"].forEach((id, i) => {
+  const emojis = ["👍","❤️","😂","🎉"];
+  $(id) && $(id).addEventListener("click", () => sendReaction(emojis[i]));
+});
+
+// ---------- Raise hand ----------
+$("raiseHandBtn") && $("raiseHandBtn").addEventListener("click", () => {
+  if (handsRaised.has(uid)) { handsRaised.delete(uid); hostBroadcast("raise-hand", { on: false }); }
+  else { handsRaised.add(uid); hostBroadcast("raise-hand", { on: true }); }
+  updateHands();
+});
 
 // ---------- Mic ----------
 $("micControl").addEventListener("click", async () => {
@@ -475,14 +609,15 @@ function escapeHTML(str) { return str.replace(/[&<>'"]/g, (t) => ({ "&": "&amp;"
 // ---------- Leave / Ended ----------
 $("leaveControl").addEventListener("click", async () => { if (confirm("Leave this meeting?")) await leaveMeeting(false); });
 async function leaveMeeting(kicked) {
-  stopStats();
+  stopStats(); stopTimer();
   pingPresence("leave");
   for (let k in localTracks) { if (localTracks[k]) { localTracks[k].stop(); localTracks[k].close(); localTracks[k] = null; } }
   if (screenTrack) { screenTrack.stop(); screenTrack.close(); screenTrack = null; isScreenSharing = false; }
   setMic(true); setCam(true);
   if (client) { try { await client.leave(); } catch (e) {} }
-  remoteUsers = {}; chatStreamId = null;
+  remoteUsers = {}; handsRaised = new Set(); chatStreamId = null;
   $("meetingScreen").classList.add("hidden");
+  $("reconnectBanner").classList.add("hidden");
   $("connectionStatus").classList.remove("flex"); $("connectionStatus").classList.add("hidden");
   $("channelBadge").classList.add("hidden");
   $("endedScreen").classList.remove("hidden");

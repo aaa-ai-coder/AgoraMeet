@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="icon.svg">
   <style>
     :root { --bg: #030712; }
     * { -webkit-tap-highlight-color: transparent; }
@@ -15,13 +16,8 @@
       background: radial-gradient(circle at 50% 0%, #1e293b 0%, #030712 60%);
       overscroll-behavior: none; transition: background 0.4s ease;
     }
-    html.light body {
-      background: radial-gradient(circle at 50% 0%, #e2e8f0 0%, #f8fafc 60%);
-      color: #0f172a;
-    }
-    html.light .glass-card {
-      background: rgba(255,255,255,0.8); border-color: rgba(15,23,42,0.08);
-    }
+    html.light body { background: radial-gradient(circle at 50% 0%, #e2e8f0 0%, #f8fafc 60%); color: #0f172a; }
+    html.light .glass-card { background: rgba(255,255,255,0.8); border-color: rgba(15,23,42,0.08); }
     html.light .glass-input { background: rgba(15,23,42,0.03); border-color: rgba(15,23,42,0.12); color: #0f172a; }
     html.light .glass-input:focus { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59,130,246,0.25); }
     html.light .text-slate-400 { color: #64748b; }
@@ -31,43 +27,19 @@
     html.light .control-btn { background: rgba(15,23,42,0.08); color: #0f172a; }
     html.light .control-btn:hover { background: rgba(15,23,42,0.14); }
     html.light .bg-slate-950\/40 { background: rgba(226,232,240,0.6); }
-    .glass-card {
-      background: rgba(17, 24, 39, 0.72);
-      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .glass-input {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: white; transition: all 0.3s ease;
-    }
-    .glass-input:focus {
-      background: rgba(255, 255, 255, 0.07);
-      border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); outline: none;
-    }
-    .video-container {
-      background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 1rem; overflow: hidden; position: relative;
-    }
+    .glass-card { background: rgba(17,24,39,0.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+    .glass-input { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s ease; }
+    .glass-input:focus { background: rgba(255,255,255,0.07); border-color: #3b82f6; box-shadow: 0 0 15px rgba(59,130,246,0.3); outline: none; }
+    .video-container { background: #0f172a; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; overflow: hidden; position: relative; }
     .video-container video { object-fit: cover !important; width: 100%; height: 100%; }
-    .control-btn {
-      width: 3.25rem; height: 3.25rem; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      transition: all 0.2s ease-in-out; cursor: pointer; user-select: none;
-    }
-    .active-speaker { border: 3px solid #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+    .control-btn { width: 3.25rem; height: 3.25rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease-in-out; cursor: pointer; user-select: none; }
+    .active-speaker { border: 3px solid #10b981; box-shadow: 0 0 15px rgba(16,185,129,0.4); }
     .fade-in { animation: fade 0.4s ease; }
     @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    .toast {
-      position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-      background: rgba(15,23,42,0.95); border: 1px solid rgba(255,255,255,0.1);
-      padding: 10px 18px; border-radius: 12px; font-size: 13px; z-index: 50; max-width: 90vw;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    }
-    #loadingOverlay {
-      position: fixed; inset: 0; background: rgba(3,7,18,0.92); z-index: 100;
-      display: none; align-items: center; justify-content: center; flex-direction: column;
-    }
+    .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.95); border: 1px solid rgba(255,255,255,0.1); padding: 10px 18px; border-radius: 12px; font-size: 13px; z-index: 50; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+    #loadingOverlay { position: fixed; inset: 0; background: rgba(3,7,18,0.92); z-index: 100; display: none; align-items: center; justify-content: center; flex-direction: column; }
+    @keyframes floatUp { 0% { opacity: 0; transform: translateY(0) scale(0.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-220px) scale(1.4); } }
+    .reaction-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 30; }
   </style>
 </head>
 <body class="text-white min-h-screen flex flex-col overflow-x-hidden">
@@ -76,7 +48,6 @@
     <div class="w-14 h-14 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
     <p id="loadingText" class="mt-4 text-slate-300 text-sm">Connecting…</p>
   </div>
-
   <div id="toastContainer"></div>
 
   <header class="w-full py-4 px-6 flex justify-between items-center border-b border-white/5 z-10 glass-card">
@@ -102,6 +73,11 @@
     </div>
   </header>
 
+  <!-- Reconnect banner -->
+  <div id="reconnectBanner" class="hidden w-full bg-amber-500/20 border-b border-amber-500/30 text-amber-300 text-xs text-center py-2 z-20">
+    <i class="fa-solid fa-rotate fa-spin mr-1"></i> Reconnecting to room…
+  </div>
+
   <!-- LOBBY -->
   <main id="lobbyScreen" class="flex-1 flex flex-col justify-center items-center px-4 py-8 z-10">
     <div class="max-w-md w-full glass-card rounded-2xl p-8 shadow-2xl relative overflow-hidden fade-in">
@@ -116,16 +92,14 @@
           <label for="roomName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Room (Channel) Name</label>
           <div class="relative">
             <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-solid fa-door-open"></i></span>
-            <input type="text" id="roomName" required placeholder="e.g. standard-room"
-              class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
+            <input type="text" id="roomName" required placeholder="e.g. standard-room" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
           </div>
         </div>
         <div>
           <label for="displayName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Your Display Name</label>
           <div class="relative">
             <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-solid fa-user"></i></span>
-            <input type="text" id="displayName" required placeholder="e.g. John Doe"
-              class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
+            <input type="text" id="displayName" required placeholder="e.g. John Doe" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
           </div>
         </div>
         <div class="grid grid-cols-2 gap-4 pt-2">
@@ -136,14 +110,15 @@
             <i class="fa-solid fa-video text-emerald-400" id="lobbyCamIcon"></i><span id="lobbyCamText">Camera On</span>
           </button>
         </div>
-        <button type="submit" id="joinBtn"
-          class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-500/25 transition duration-200 flex items-center justify-center space-x-2">
-          <span>Join Meeting</span><i class="fa-solid fa-arrow-right"></i>
+        <button type="submit" id="joinBtn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-500/25 transition duration-200 flex items-center justify-center space-x-2">
+          <span>Continue</span><i class="fa-solid fa-arrow-right"></i>
+        </button>
+        <button type="button" id="enableDevicesBtn" class="w-full bg-white/10 hover:bg-white/15 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-camera"></i><span>Enable Camera & Mic (preview)</span>
         </button>
       </form>
     </div>
 
-    <!-- Recent + Nearby -->
     <div class="max-w-md w-full mt-6 grid grid-cols-1 gap-4">
       <div class="glass-card rounded-2xl p-5">
         <h3 class="text-sm font-bold mb-3 flex items-center"><i class="fa-solid fa-satellite-dish text-emerald-400 mr-2"></i>Nearby Rooms <span class="text-[10px] text-slate-500 ml-2">live now</span></h3>
@@ -156,14 +131,42 @@
     </div>
   </main>
 
+  <!-- PRE-JOIN PREVIEW -->
+  <main id="previewScreen" class="hidden flex-1 flex flex-col justify-center items-center px-4 py-8 z-10">
+    <div class="max-w-md w-full glass-card rounded-2xl p-6 shadow-2xl fade-in">
+      <h2 class="text-2xl font-extrabold mb-1 text-center">Ready to join?</h2>
+      <p class="text-sm text-slate-400 text-center mb-4">Check your camera and mic before entering.</p>
+      <div class="video-container h-64 mb-4 relative">
+        <video id="previewVideo" class="w-full h-full" autoplay playsinline></video>
+        <div class="absolute bottom-3 left-3 right-3">
+          <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden"><div id="micMeter" class="h-full bg-slate-600 w-0 transition-all"></div></div>
+        </div>
+      </div>
+      <div id="previewError" class="hidden text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-3"></div>
+      <div class="flex justify-center space-x-4 mb-4">
+        <div id="togglePreviewMic" class="control-btn bg-white/10 hover:bg-white/15 text-white"><i class="fa-solid fa-microphone text-lg"></i></div>
+        <div id="togglePreviewCam" class="control-btn bg-white/10 hover:bg-white/15 text-white"><i class="fa-solid fa-video text-lg"></i></div>
+      </div>
+      <label class="flex items-center justify-center space-x-2 text-xs text-slate-400 mb-4">
+        <input type="checkbox" id="mirrorToggle" checked> Mirror my video
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <button id="previewBackBtn" class="py-3 rounded-xl glass-input text-sm font-semibold hover:bg-white/5">Back</button>
+        <button id="joinBtnPreview" class="py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold" onclick="document.getElementById('joinForm').requestSubmit()">Join Now</button>
+      </div>
+    </div>
+  </main>
+
   <!-- MEETING -->
   <main id="meetingScreen" class="hidden flex-1 flex flex-col md:flex-row relative overflow-hidden">
     <div class="flex-1 flex flex-col p-6 space-y-4">
       <div id="videoGrid" class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center justify-center"></div>
+      <div class="reaction-layer" id="reactionLayer"></div>
       <div class="flex justify-center items-center space-x-3 py-2 bg-slate-950/40 backdrop-blur-md rounded-2xl border border-white/5 px-6 max-w-2xl mx-auto w-full">
         <div id="micControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Mute/Unmute Mic"><i class="fa-solid fa-microphone text-lg" id="micIcon"></i></div>
         <div id="camControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Toggle Video"><i class="fa-solid fa-video text-lg" id="camIcon"></i></div>
         <div id="screenControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Share Screen"><i class="fa-solid fa-desktop text-lg" id="screenIcon"></i></div>
+        <div id="raiseHandBtn" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Raise Hand"><i class="fa-solid fa-hand text-lg"></i></div>
         <div id="chatToggle" class="control-btn bg-white/10 hover:bg-white/15 text-white relative" title="Toggle Chat">
           <i class="fa-solid fa-comment text-lg"></i>
           <span id="chatDot" class="absolute top-1 right-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-slate-900 hidden"></span>
@@ -171,7 +174,15 @@
         <div id="shareRoomBtn" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Share Room Link"><i class="fa-solid fa-link text-lg"></i></div>
         <div id="leaveControl" class="control-btn bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30" title="Leave Room"><i class="fa-solid fa-phone-slash text-lg"></i></div>
       </div>
-      <!-- Host controls -->
+      <!-- Reactions row -->
+      <div class="flex justify-center items-center space-x-3">
+        <button id="react1" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">👍</button>
+        <button id="react2" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">❤️</button>
+        <button id="react3" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">😂</button>
+        <button id="react4" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">🎉</button>
+        <span id="callTimer" class="ml-2 text-xs text-slate-400 font-mono">00:00</span>
+        <span id="handCount" class="ml-2 text-xs text-amber-400"></span>
+      </div>
       <div id="hostControls" class="flex justify-center items-center space-x-3 hidden">
         <span id="netQuality" class="text-xs text-emerald-400 flex items-center"><i class="fa-solid fa-signal mr-1" id="netSignal"></i>Excellent</span>
         <button id="hostMuteAllBtn" class="px-4 py-2 rounded-xl glass-input text-xs font-semibold"><i class="fa-solid fa-microphone-slash mr-1"></i>Mute All</button>
@@ -222,7 +233,7 @@
     </div>
   </main>
 
-  <!-- Local video template (hidden, cloned for grid) -->
+  <!-- Local video template -->
   <div id="localVideoContainer" class="video-container h-full min-h-[250px] flex items-center justify-center hidden">
     <div id="localVideo" class="w-full h-full"></div>
     <div class="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10 text-xs font-semibold flex items-center space-x-2">
