@@ -78,10 +78,10 @@ function serveApk(res, filePath, fileName) {
   res.download(filePath, fileName);
 }
 
-app.get('/download-apk', (req, res) => {
+app.get('/get-agorameet-one.apk', (req, res) => {
   serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet-v1.2.0.apk'), 'AgoraMeet-v1.2.0.apk');
 });
-app.get('/download-apk2', (req, res) => {
+app.get('/get-agorameet-two.apk', (req, res) => {
   serveApk(res, path.join(__dirname, 'releases', 'AgoraMeet2-v1.2.0.apk'), 'AgoraMeet2-v1.2.0.apk');
 });
 
