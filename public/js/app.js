@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  RecaptchaVerifier, onAuthStateChanged, signOut
+  RecaptchaVerifier, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, signInWithCredential
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit,
@@ -41,44 +41,94 @@ document.querySelectorAll(".bottomnav .bn").forEach(b => b.onclick = () => showV
 $("newChatBtn").onclick = () => { $("peopleList").innerHTML = ""; showView("newChatView"); };
 
 // ---------------- AUTH ----------------
-$("useEmailLink").onclick = () => { $("phoneStep").classList.add("hidden"); $("emailStep").classList.remove("hidden"); };
-$("usePhoneLink").onclick = () => { $("emailStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
+function err(msg) { $("authError").textContent = msg; $("authError").classList.remove("hidden"); }
+function clearErr() { $("authError").classList.add("hidden"); }
+
+$("useEmailLink").onclick = () => { clearErr(); $("phoneStep").classList.add("hidden"); $("otpStep").classList.add("hidden"); $("emailStep").classList.remove("hidden"); };
+$("usePhoneLink").onclick = () => { clearErr(); $("emailStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
+
+function makeVerifier() {
+  if (window.recaptchaVerifier) { try { window.recaptchaVerifier.clear(); } catch (e) {} }
+  window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", { size: "invisible" });
+  return window.recaptchaVerifier;
+}
 
 $("sendOtpBtn").onclick = async () => {
   const phone = $("phoneInput").value.trim();
-  if (!/^\d{6,15}$/.test(phone)) { $("authError").textContent = "Enter a valid number"; $("authError").classList.remove("hidden"); return; }
-  $("authError").classList.add("hidden");
+  if (!/^\d{6,15}$/.test(phone)) { err("Enter a valid number (digits only)"); return; }
+  clearErr();
+  $("sendOtpBtn").disabled = true;
   try {
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha", { size: "invisible" });
-    const full = "+88" + phone;
-    window.confirmationResult = await signInWithPhoneNumber(auth, full, window.recaptchaVerifier);
+    const verifier = makeVerifier();
+    const full = (phone.startsWith("+") ? phone : "+88" + phone);
+    window.confirmationResult = await signInWithPhoneNumber(auth, full, verifier);
     $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
-    toast("Code sent");
+    $("otpInput").focus();
+    toast("Code sent to " + full);
   } catch (e) {
-    $("authError").textContent = e.message || "Failed to send code"; $("authError").classList.remove("hidden");
-  }
+    err(friendly(e));
+  } finally { $("sendOtpBtn").disabled = false; }
 };
 
 $("verifyOtpBtn").onclick = async () => {
+  const code = $("otpInput").value.trim();
+  if (!code) { err("Enter the code"); return; }
+  clearErr();
   try {
-    await window.confirmationResult.confirm($("otpInput").value.trim());
+    await window.confirmationResult.confirm(code);
   } catch (e) {
-    $("authError").textContent = "Wrong code"; $("authError").classList.remove("hidden");
+    err("Wrong or expired code. Try again.");
   }
 };
 
-$("resendLink").onclick = () => $("sendOtpBtn").onclick();
+$("resendLink").onclick = () => { clearErr(); $("otpStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
 
 $("emailBtn").onclick = async () => {
   const e = $("emailInput").value.trim(), p = $("passwordInput").value;
-  if (!e || !p) return;
+  if (!e || !p) { err("Email and password required"); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { err("Enter a valid email"); return; }
+  clearErr();
+  $("emailBtn").disabled = true;
   try {
     await signInWithEmailAndPassword(auth, e, p);
   } catch (err) {
-    try { await createUserWithEmailAndPassword(auth, e, p); }
-    catch (e2) { $("authError").textContent = e2.message; $("authError").classList.remove("hidden"); }
-  }
+    if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
+      try { await createUserWithEmailAndPassword(auth, e, p); }
+      catch (e2) { err(friendly(e2)); }
+    } else { err(friendly(err)); }
+  } finally { $("emailBtn").disabled = false; }
 };
+
+$("googleBtn").onclick = async () => {
+  clearErr();
+  $("googleBtn").disabled = true;
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    err(friendly(e));
+  } finally { $("googleBtn").disabled = false; }
+};
+
+function friendly(e) {
+  const c = e && e.code;
+  const map = {
+    "auth/invalid-phone-number": "Invalid phone number format.",
+    "auth/too-many-requests": "Too many attempts. Wait and retry.",
+    "auth/captcha-check-failed": "Captcha failed. Retry.",
+    "auth/invalid-verification-code": "Wrong code.",
+    "auth/code-expired": "Code expired. Resend.",
+    "auth/popup-blocked": "Popup blocked. Allow popups or use another method.",
+    "auth/popup-closed-by-user": "Sign-in cancelled.",
+    "auth/network-request-failed": "Network error. Check connection.",
+    "auth/email-already-in-use": "Email already registered. Sign in instead.",
+    "auth/weak-password": "Password too weak (min 6 chars).",
+    "auth/invalid-email": "Invalid email address.",
+    "auth/api-key-not-set": "App not configured (missing Firebase web key).",
+    "auth/invalid-api-key": "Firebase web API key is invalid."
+  };
+  return (c && map[c]) || e.message || "Something went wrong.";
+}
 
 $("logoutBtn").onclick = () => signOut(auth);
 

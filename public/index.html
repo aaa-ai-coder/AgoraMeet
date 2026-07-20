@@ -17,7 +17,7 @@
     <section id="loginScreen" class="screen active">
       <div class="auth-wrap">
         <div class="brand">
-          <div class="brand-logo"><i class="fa-solid fa-comment-dots"></i></div>
+          <div class="brand-logo"><img src="icon.svg" width="40" height="40" alt="logo"></div>
           <h1>AgoraMeet</h1>
           <p class="sub">Connect with anyone, anywhere.</p>
         </div>
@@ -28,6 +28,7 @@
             <input id="phoneInput" type="tel" placeholder="01XXXXXXXXX" autocomplete="off">
           </div>
           <button id="sendOtpBtn" class="btn-primary">Continue</button>
+          <button id="googleBtn" class="btn-google"><i class="fa-brands fa-google"></i> Continue with Google</button>
           <p class="alt-link" id="useEmailLink">Use email instead</p>
         </div>
         <div id="otpStep" class="hidden">
@@ -53,7 +54,7 @@
     <section id="mainScreen" class="screen">
       <!-- Header -->
       <header class="topbar">
-        <div class="topbar-title">AgoraMeet</div>
+        <div class="topbar-title"><img src="icon.svg" width="26" height="26" style="vertical-align:-6px;margin-right:8px;border-radius:7px">AgoraMeet</div>
         <div class="topbar-actions">
           <button id="newChatBtn" title="New chat"><i class="fa-solid fa-pen-to-square"></i></button>
           <button id="logoutBtn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
