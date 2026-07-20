@@ -9,7 +9,7 @@ import {
   addDoc, getDocs, serverTimestamp, getDoc, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2.3.2";
+const VERSION = "2.3.3";
 const $ = (id) => document.getElementById(id);
 const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.onrender.com";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
@@ -501,6 +501,15 @@ $("setAboutBtn").onclick = () => {
   $("viewerBody").innerHTML = '<div class="msg in" style="max-width:90%;align-self:center;margin-top:20px">AgoraMeet v2.1 — WhatsApp-style messenger with Agora + Cloudflare calls and an AI assistant.<br><br>Built with Firebase, Agora, Capacitor.</div>';
   showView("viewerView");
 };
+$("setPrivacyBtn").onclick = async () => {
+  $("viewerTitle").textContent = "Privacy Policy";
+  try {
+    const r = await fetch("privacy.html");
+    const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    $("viewerBody").innerHTML = doc.body.innerHTML;
+  } catch (e) { $("viewerBody").innerHTML = '<p style="color:#8696a0;padding:16px">Could not load the policy.</p>'; }
+  showView("viewerView");
+};
 $("setCallsBtn").onclick = async () => {
   const snap = await getDocs(query(collection(db, "users", currentUser.uid, "calls"), orderBy("at", "desc")));
   $("viewerTitle").textContent = "Call history";
@@ -562,6 +571,18 @@ $("callChatSend").onclick = async () => {
   const cid = (callPeer.type === "group") ? callPeer.uid : chatId(currentUser.uid, callPeer.uid);
   await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, fromName: currentUser.displayName || currentUser.phoneNumber, text: t, ts: serverTimestamp() });
 };
+
+// ---------------- Client error reporting ----------------
+function reportClientError(message, stack) {
+  try {
+    fetch(api("/api/client-error"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: VERSION, pkg: (navigator.userAgent.match(/AgoraMeet|agorameet/i) ? "" : ""), ua: navigator.userAgent, message: String(message || ""), stack: String(stack || ""), url: location.href })
+    });
+  } catch (_) {}
+}
+window.addEventListener("error", e => reportClientError(e.message, e.error && e.error.stack));
+window.addEventListener("unhandledrejection", e => reportClientError("unhandledrejection: " + ((e.reason && e.reason.message) || e.reason), e.reason && e.reason.stack));
 
 // ---------------- BOOT ----------------
 $("authLoader").classList.remove("hidden");

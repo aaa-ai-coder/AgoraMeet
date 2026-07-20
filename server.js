@@ -226,4 +226,20 @@ app.post("/api/bot/confirm", async (req, res) => {
   }
 });
 
+// Client-side crash/error logging (gives us crash visibility without the Firebase console)
+app.post("/api/client-error", async (req, res) => {
+  const b = req.body || {};
+  console.log("[client-error]", b.version || "", b.pkg || "", b.message || "", (b.stack || "").slice(0, 300));
+  try {
+    if (admin) {
+      await admin.firestore().collection("logs").doc("clientErrors").collection("items").add({
+        at: admin.firestore.FieldValue.serverTimestamp(),
+        version: b.version || "", pkg: b.pkg || "", ua: b.ua || "",
+        message: b.message || "", stack: b.stack || "", url: b.url || ""
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.listen(PORT, () => console.log(`AgoraMeet v2 server on :${PORT}`));
