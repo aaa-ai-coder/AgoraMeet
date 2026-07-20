@@ -2,264 +2,150 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>AgoraMeet - Premium Video & Voice Rooms</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+  <title>AgoraMeet</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="icon.svg">
-  <style>
-    :root { --bg: #030712; }
-    * { -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-      background: radial-gradient(circle at 50% 0%, #1e293b 0%, #030712 60%);
-      overscroll-behavior: none; transition: background 0.4s ease;
-    }
-    html.light body { background: radial-gradient(circle at 50% 0%, #e2e8f0 0%, #f8fafc 60%); color: #0f172a; }
-    html.light .glass-card { background: rgba(255,255,255,0.8); border-color: rgba(15,23,42,0.08); }
-    html.light .glass-input { background: rgba(15,23,42,0.03); border-color: rgba(15,23,42,0.12); color: #0f172a; }
-    html.light .glass-input:focus { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59,130,246,0.25); }
-    html.light .text-slate-400 { color: #64748b; }
-    html.light .text-slate-300 { color: #334155; }
-    html.light .text-slate-500 { color: #64748b; }
-    html.light .video-container { background: #e2e8f0; border-color: rgba(15,23,42,0.08); }
-    html.light .control-btn { background: rgba(15,23,42,0.08); color: #0f172a; }
-    html.light .control-btn:hover { background: rgba(15,23,42,0.14); }
-    html.light .bg-slate-950\/40 { background: rgba(226,232,240,0.6); }
-    .glass-card { background: rgba(17,24,39,0.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
-    .glass-input { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s ease; }
-    .glass-input:focus { background: rgba(255,255,255,0.07); border-color: #3b82f6; box-shadow: 0 0 15px rgba(59,130,246,0.3); outline: none; }
-    .video-container { background: #0f172a; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; overflow: hidden; position: relative; }
-    .video-container video { object-fit: cover !important; width: 100%; height: 100%; }
-    .control-btn { width: 3.25rem; height: 3.25rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease-in-out; cursor: pointer; user-select: none; }
-    .active-speaker { border: 3px solid #10b981; box-shadow: 0 0 15px rgba(16,185,129,0.4); }
-    .fade-in { animation: fade 0.4s ease; }
-    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.95); border: 1px solid rgba(255,255,255,0.1); padding: 10px 18px; border-radius: 12px; font-size: 13px; z-index: 50; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
-    #loadingOverlay { position: fixed; inset: 0; background: rgba(3,7,18,0.92); z-index: 100; display: none; align-items: center; justify-content: center; flex-direction: column; }
-    @keyframes floatUp { 0% { opacity: 0; transform: translateY(0) scale(0.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-220px) scale(1.4); } }
-    .reaction-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 30; }
-  </style>
 </head>
-<body class="text-white min-h-screen flex flex-col overflow-x-hidden">
+<body>
 
-  <div id="loadingOverlay">
-    <div class="w-14 h-14 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-    <p id="loadingText" class="mt-4 text-slate-300 text-sm">Connecting…</p>
-  </div>
-  <div id="toastContainer"></div>
+  <!-- App container -->
+  <div id="app">
 
-  <header class="w-full py-4 px-6 flex justify-between items-center border-b border-white/5 z-10 glass-card">
-    <div class="flex items-center space-x-3">
-      <div class="bg-gradient-to-r from-blue-500 to-indigo-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-        <i class="fa-solid fa-video text-white text-lg"></i>
+    <!-- LOGIN SCREEN -->
+    <section id="loginScreen" class="screen active">
+      <div class="auth-wrap">
+        <div class="brand">
+          <div class="brand-logo"><i class="fa-solid fa-comment-dots"></i></div>
+          <h1>AgoraMeet</h1>
+          <p class="sub">Connect with anyone, anywhere.</p>
+        </div>
+        <div id="phoneStep">
+          <label>Phone number</label>
+          <div class="phone-row">
+            <span class="cc">+88</span>
+            <input id="phoneInput" type="tel" placeholder="01XXXXXXXXX" autocomplete="off">
+          </div>
+          <button id="sendOtpBtn" class="btn-primary">Continue</button>
+          <p class="alt-link" id="useEmailLink">Use email instead</p>
+        </div>
+        <div id="otpStep" class="hidden">
+          <label>Enter the 6-digit code</label>
+          <input id="otpInput" type="text" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off">
+          <button id="verifyOtpBtn" class="btn-primary">Verify</button>
+          <p class="alt-link" id="resendLink">Resend code</p>
+        </div>
+        <div id="emailStep" class="hidden">
+          <label>Email</label>
+          <input id="emailInput" type="email" placeholder="you@email.com" autocomplete="off">
+          <label>Password</label>
+          <input id="passwordInput" type="password" placeholder="••••••••" autocomplete="off">
+          <button id="emailBtn" class="btn-primary">Sign in</button>
+          <p class="alt-link" id="usePhoneLink">Use phone instead</p>
+        </div>
+        <p id="authError" class="error hidden"></p>
+        <div id="recaptcha"></div>
       </div>
-      <div>
-        <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">AgoraMeet</h1>
-        <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Enterprise Calling</p>
-      </div>
-    </div>
-    <div class="flex items-center space-x-3">
-      <div id="connectionStatus" class="hidden items-center space-x-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span class="text-xs text-emerald-400 font-medium">Connected</span>
-      </div>
-      <div id="channelBadge" class="hidden px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-slate-300">
-        Room: <span id="currentRoomName" class="text-blue-400">...</span>
-        <span id="hostBadge" class="ml-1 text-[10px] text-amber-400 hidden">· Host</span>
-      </div>
-      <button id="themeToggle" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-sm" title="Toggle theme"><i class="fa-solid fa-sun"></i></button>
-    </div>
-  </header>
+    </section>
 
-  <!-- Reconnect banner -->
-  <div id="reconnectBanner" class="hidden w-full bg-amber-500/20 border-b border-amber-500/30 text-amber-300 text-xs text-center py-2 z-20">
-    <i class="fa-solid fa-rotate fa-spin mr-1"></i> Reconnecting to room…
-  </div>
+    <!-- MAIN APP -->
+    <section id="mainScreen" class="screen">
+      <!-- Header -->
+      <header class="topbar">
+        <div class="topbar-title">AgoraMeet</div>
+        <div class="topbar-actions">
+          <button id="newChatBtn" title="New chat"><i class="fa-solid fa-pen-to-square"></i></button>
+          <button id="logoutBtn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
+      </header>
 
-  <!-- LOBBY -->
-  <main id="lobbyScreen" class="flex-1 flex flex-col justify-center items-center px-4 py-8 z-10">
-    <div class="max-w-md w-full glass-card rounded-2xl p-8 shadow-2xl relative overflow-hidden fade-in">
-      <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl"></div>
-      <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
-      <div class="text-center mb-8 relative z-10">
-        <h2 class="text-3xl font-extrabold tracking-tight">Join Meeting</h2>
-        <p class="text-sm text-slate-400 mt-2">Enter a room name and display name to get started.</p>
-      </div>
-      <form id="joinForm" class="space-y-6 relative z-10">
-        <div>
-          <label for="roomName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Room (Channel) Name</label>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-solid fa-door-open"></i></span>
-            <input type="text" id="roomName" required placeholder="e.g. standard-room" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
+      <div class="main-body">
+        <!-- Chats list -->
+        <div id="chatsView" class="view active">
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="searchInput" placeholder="Search"></div>
+          <div id="chatList" class="chat-list"></div>
+        </div>
+
+        <!-- Conversation -->
+        <div id="conversationView" class="view">
+          <div class="conv-header">
+            <button id="backBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-avatar" id="convAvatar">?</div>
+            <div class="conv-meta">
+              <div class="conv-name" id="convName">Name</div>
+              <div class="conv-status" id="convStatus">online</div>
+            </div>
+            <div class="conv-actions">
+              <button id="callVoiceBtn" title="Voice call"><i class="fa-solid fa-phone"></i></button>
+              <button id="callVideoBtn" title="Video call"><i class="fa-solid fa-video"></i></button>
+            </div>
+          </div>
+          <div id="messages" class="messages"></div>
+          <div class="composer">
+            <input id="msgInput" placeholder="Message" autocomplete="off">
+            <button id="sendBtn"><i class="fa-solid fa-paper-plane"></i></button>
           </div>
         </div>
-        <div>
-          <label for="displayName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Your Display Name</label>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-solid fa-user"></i></span>
-            <input type="text" id="displayName" required placeholder="e.g. John Doe" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm" autocomplete="off">
+
+        <!-- New chat -->
+        <div id="newChatView" class="view">
+          <div class="conv-header">
+            <button id="newBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name">New chat</div>
+          </div>
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="newSearchInput" placeholder="Find people by phone"></div>
+          <div id="peopleList" class="chat-list"></div>
+        </div>
+
+        <!-- AI Assistant -->
+        <div id="aiView" class="view">
+          <div class="conv-header">
+            <div class="conv-avatar" style="background:#00a884">AI</div>
+            <div class="conv-meta">
+              <div class="conv-name">AI Assistant</div>
+              <div class="conv-status" id="aiStatus">ready</div>
+            </div>
+          </div>
+          <div id="aiMessages" class="messages"></div>
+          <div class="composer">
+            <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
+            <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-4 pt-2">
-          <button type="button" id="toggleLobbyMic" class="flex items-center justify-center space-x-2 py-3 rounded-xl glass-input text-xs font-semibold transition hover:bg-white/5">
-            <i class="fa-solid fa-microphone text-emerald-400" id="lobbyMicIcon"></i><span id="lobbyMicText">Mic On</span>
-          </button>
-          <button type="button" id="toggleLobbyCam" class="flex items-center justify-center space-x-2 py-3 rounded-xl glass-input text-xs font-semibold transition hover:bg-white/5">
-            <i class="fa-solid fa-video text-emerald-400" id="lobbyCamIcon"></i><span id="lobbyCamText">Camera On</span>
-          </button>
-        </div>
-        <button type="submit" id="joinBtn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-500/25 transition duration-200 flex items-center justify-center space-x-2">
-          <span>Continue</span><i class="fa-solid fa-arrow-right"></i>
-        </button>
-        <button type="button" id="enableDevicesBtn" class="w-full bg-white/10 hover:bg-white/15 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center space-x-2">
-          <i class="fa-solid fa-camera"></i><span>Enable Camera & Mic (preview)</span>
-        </button>
-      </form>
-    </div>
+      </div>
 
-    <div class="max-w-md w-full mt-6 grid grid-cols-1 gap-4">
-      <div class="glass-card rounded-2xl p-5">
-        <h3 class="text-sm font-bold mb-3 flex items-center"><i class="fa-solid fa-satellite-dish text-emerald-400 mr-2"></i>Nearby Rooms <span class="text-[10px] text-slate-500 ml-2">live now</span></h3>
-        <div id="nearbyRooms" class="space-y-2"></div>
-      </div>
-      <div class="glass-card rounded-2xl p-5">
-        <h3 class="text-sm font-bold mb-3 flex items-center"><i class="fa-solid fa-clock-rotate-left text-blue-400 mr-2"></i>Recent Rooms</h3>
-        <div id="recentRooms" class="space-y-2"></div>
-      </div>
-    </div>
-  </main>
+      <!-- Bottom navigation -->
+      <nav class="bottomnav">
+        <button class="bn active" data-view="chatsView"><i class="fa-solid fa-comment"></i><span>Chats</span></button>
+        <button class="bn" data-view="aiView"><i class="fa-solid fa-robot"></i><span>AI</span></button>
+      </nav>
+    </section>
 
-  <!-- PRE-JOIN PREVIEW -->
-  <main id="previewScreen" class="hidden flex-1 flex flex-col justify-center items-center px-4 py-8 z-10">
-    <div class="max-w-md w-full glass-card rounded-2xl p-6 shadow-2xl fade-in">
-      <h2 class="text-2xl font-extrabold mb-1 text-center">Ready to join?</h2>
-      <p class="text-sm text-slate-400 text-center mb-4">Check your camera and mic before entering.</p>
-      <div class="video-container h-64 mb-4 relative">
-        <video id="previewVideo" class="w-full h-full" autoplay playsinline></video>
-        <div class="absolute bottom-3 left-3 right-3">
-          <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden"><div id="micMeter" class="h-full bg-slate-600 w-0 transition-all"></div></div>
+    <!-- CALL SCREEN -->
+    <section id="callScreen" class="screen">
+      <div class="call-bg"></div>
+      <div class="call-overlay">
+        <div class="call-avatar" id="callAvatar">?</div>
+        <div class="call-name" id="callName">Name</div>
+        <div class="call-state" id="callState">Calling…</div>
+        <div id="callVideoWrap" class="hidden">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <video id="localVideo" autoplay playsinline muted></video>
+        </div>
+        <div class="call-controls">
+          <button id="callMuteBtn" class="cc"><i class="fa-solid fa-microphone"></i></button>
+          <button id="callEndBtn" class="cc cc-end"><i class="fa-solid fa-phone-slash"></i></button>
+          <button id="callCamBtn" class="cc"><i class="fa-solid fa-video"></i></button>
         </div>
       </div>
-      <div id="previewError" class="hidden text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-3"></div>
-      <div class="flex justify-center space-x-4 mb-4">
-        <div id="togglePreviewMic" class="control-btn bg-white/10 hover:bg-white/15 text-white"><i class="fa-solid fa-microphone text-lg"></i></div>
-        <div id="togglePreviewCam" class="control-btn bg-white/10 hover:bg-white/15 text-white"><i class="fa-solid fa-video text-lg"></i></div>
-      </div>
-      <label class="flex items-center justify-center space-x-2 text-xs text-slate-400 mb-4">
-        <input type="checkbox" id="mirrorToggle" checked> Mirror my video
-      </label>
-      <div class="grid grid-cols-2 gap-3">
-        <button id="previewBackBtn" class="py-3 rounded-xl glass-input text-sm font-semibold hover:bg-white/5">Back</button>
-        <button id="joinBtnPreview" class="py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold" onclick="document.getElementById('joinForm').requestSubmit()">Join Now</button>
-      </div>
-    </div>
-  </main>
+    </section>
 
-  <!-- MEETING -->
-  <main id="meetingScreen" class="hidden flex-1 flex flex-col md:flex-row relative overflow-hidden">
-    <div class="flex-1 flex flex-col p-6 space-y-4">
-      <div id="videoGrid" class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-center justify-center"></div>
-      <div class="reaction-layer" id="reactionLayer"></div>
-      <div class="flex justify-center items-center space-x-3 py-2 bg-slate-950/40 backdrop-blur-md rounded-2xl border border-white/5 px-6 max-w-2xl mx-auto w-full">
-        <div id="micControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Mute/Unmute Mic"><i class="fa-solid fa-microphone text-lg" id="micIcon"></i></div>
-        <div id="camControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Toggle Video"><i class="fa-solid fa-video text-lg" id="camIcon"></i></div>
-        <div id="screenControl" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Share Screen"><i class="fa-solid fa-desktop text-lg" id="screenIcon"></i></div>
-        <div id="raiseHandBtn" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Raise Hand"><i class="fa-solid fa-hand text-lg"></i></div>
-        <div id="chatToggle" class="control-btn bg-white/10 hover:bg-white/15 text-white relative" title="Toggle Chat">
-          <i class="fa-solid fa-comment text-lg"></i>
-          <span id="chatDot" class="absolute top-1 right-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-slate-900 hidden"></span>
-        </div>
-        <div id="shareRoomBtn" class="control-btn bg-white/10 hover:bg-white/15 text-white" title="Share Room Link"><i class="fa-solid fa-link text-lg"></i></div>
-        <div id="leaveControl" class="control-btn bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30" title="Leave Room"><i class="fa-solid fa-phone-slash text-lg"></i></div>
-      </div>
-      <!-- Reactions row -->
-      <div class="flex justify-center items-center space-x-3">
-        <button id="react1" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">👍</button>
-        <button id="react2" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">❤️</button>
-        <button id="react3" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">😂</button>
-        <button id="react4" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-xl">🎉</button>
-        <span id="callTimer" class="ml-2 text-xs text-slate-400 font-mono">00:00</span>
-        <span id="handCount" class="ml-2 text-xs text-amber-400"></span>
-      </div>
-      <div id="hostControls" class="flex justify-center items-center space-x-3 hidden">
-        <span id="netQuality" class="text-xs text-emerald-400 flex items-center"><i class="fa-solid fa-signal mr-1" id="netSignal"></i>Excellent</span>
-        <button id="hostMuteAllBtn" class="px-4 py-2 rounded-xl glass-input text-xs font-semibold"><i class="fa-solid fa-microphone-slash mr-1"></i>Mute All</button>
-        <button id="hostEndRoomBtn" class="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-semibold"><i class="fa-solid fa-trash mr-1"></i>End Room for All</button>
-      </div>
-    </div>
-    <div id="sidePanel" class="w-full md:w-80 border-l border-white/5 glass-card flex flex-col h-full hidden">
-      <div class="flex border-b border-white/5">
-        <button id="chatTab" class="flex-1 py-3 text-center text-sm font-semibold border-b-2 border-blue-500 text-white">Chat</button>
-        <button id="aiTab" class="flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent"><i class="fa-solid fa-robot mr-1"></i>AI</button>
-        <button id="participantsTab" class="flex-1 py-3 text-center text-sm font-semibold text-slate-400 border-b-2 border-transparent">People (<span id="participantCount">1</span>)</button>
-      </div>
-      <div id="chatContent" class="flex-1 flex flex-col overflow-hidden h-[300px] md:h-auto">
-        <div id="chatMessages" class="flex-1 p-4 space-y-4 overflow-y-auto text-sm">
-          <div class="text-xs text-center text-slate-500 my-2">Welcome to the room chat. Messages are sent securely.</div>
-        </div>
-        <div class="p-4 border-t border-white/5 bg-black/20">
-          <form id="chatForm" class="flex space-x-2">
-            <input type="text" id="chatInput" placeholder="Send message..." autocomplete="off" class="flex-1 px-3 py-2 text-sm rounded-lg glass-input">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-lg text-white transition"><i class="fa-solid fa-paper-plane"></i></button>
-          </form>
-        </div>
-      </div>
-      <div id="aiContent" class="flex-1 flex flex-col overflow-hidden h-[300px] md:h-auto hidden">
-        <div class="p-3 border-b border-white/5 bg-black/20">
-          <label class="text-[10px] uppercase tracking-wider text-slate-400">Model</label>
-          <select id="aiModel" class="w-full mt-1 px-2 py-2 rounded-lg glass-input text-sm"></select>
-        </div>
-        <div id="aiMessages" class="flex-1 p-4 space-y-4 overflow-y-auto text-sm"></div>
-        <div class="p-4 border-t border-white/5 bg-black/20">
-          <form id="aiForm" class="flex space-x-2">
-            <input type="text" id="aiInput" placeholder="Ask the AI assistant…" autocomplete="off" class="flex-1 px-3 py-2 text-sm rounded-lg glass-input">
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-white transition"><i class="fa-solid fa-paper-plane"></i></button>
-          </form>
-        </div>
-      </div>
-      <div id="participantsContent" class="flex-1 p-4 overflow-y-auto space-y-3 hidden">
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
-          <div class="flex items-center space-x-3">
-            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-xs" id="listLocalAvatar">J</div>
-            <span class="text-sm font-medium" id="listLocalName">John Doe (You)</span>
-          </div>
-          <span class="text-[10px] uppercase font-bold text-blue-400 bg-blue-500/10 px-2 py-1 rounded">Host</span>
-        </div>
-        <div id="remoteParticipantsList" class="space-y-3"></div>
-      </div>
-    </div>
-  </main>
-
-  <!-- ENDED SCREEN -->
-  <main id="endedScreen" class="hidden flex-1 flex flex-col justify-center items-center px-4 py-8 z-10">
-    <div class="max-w-md w-full glass-card rounded-2xl p-8 shadow-2xl text-center fade-in">
-      <div class="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-        <i class="fa-solid fa-check text-emerald-400 text-2xl"></i>
-      </div>
-      <h2 class="text-2xl font-extrabold">Call Ended</h2>
-      <p class="text-sm text-slate-400 mt-2">You left room <span id="endedRoomName" class="text-blue-400 font-semibold"></span></p>
-      <div class="mt-6 space-y-3">
-        <button id="rejoinBtn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3 rounded-xl">Rejoin Room</button>
-        <button id="newRoomBtn" class="w-full glass-input py-3 rounded-xl text-sm font-semibold hover:bg-white/5">Start a New Room</button>
-      </div>
-    </div>
-  </main>
-
-  <!-- Local video template -->
-  <div id="localVideoContainer" class="video-container h-full min-h-[250px] flex items-center justify-center hidden">
-    <div id="localVideo" class="w-full h-full"></div>
-    <div class="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10 text-xs font-semibold flex items-center space-x-2">
-      <span id="localUserBadge">You</span>
-      <i class="fa-solid fa-microphone text-emerald-400" id="localMicIndicator"></i>
-    </div>
-    <div id="localAvatar" class="hidden absolute inset-0 flex items-center justify-center bg-slate-900">
-      <div class="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-3xl font-bold uppercase" id="localAvatarLetter">J</div>
-    </div>
   </div>
 
-  <script src="vendor/AgoraRTC_N-4.22.0.js"></script>
-  <script src="app.js"></script>
+  <div id="toast"></div>
+
+  <!-- Firebase + Agora from CDN (app needs network for these services anyway) -->
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

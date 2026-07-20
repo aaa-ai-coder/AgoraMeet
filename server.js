@@ -1,7 +1,12 @@
-// server.js
-const express = require('express');
-const { RtcTokenBuilder, RtcRole } = require('agora-token');
-require('dotenv').config();
+// server.js - AgoraMeet v2 backend
+// - Serves the web app (public/)
+// - Proxies Agora RTC token generation (keeps Agora cert secret)
+// - Firebase Admin: verifies ID tokens, sends FCM push, optional Firestore access
+// - Exposes public Firebase web config (web API keys are NOT secret)
+
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -9,194 +14,146 @@ const PORT = process.env.PORT || 5000;
 const APP_ID = process.env.AGORA_APP_ID || "159c36b2c45148feaa15eb38843124cf";
 const APP_CERTIFICATE = process.env.AGORA_CERTIFICATE || "04f7ae808a1d46df9858f7bc8df9f39c";
 
-// Support JSON bodies and serve static frontend assets
+app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static("public"));
 
-// CORS: the APK runs in a WebView on a file:// origin, so cross-origin
-// requests to this server are blocked unless we allow them explicitly.
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  if (req.method === "OPTIONS") return res.sendStatus(204);
-  next();
+// ---- Public Firebase web config (safe to expose) ----
+app.get("/api/firebase-config", (req, res) => {
+  res.json({
+    apiKey: process.env.FB_API_KEY || "",
+    authDomain: process.env.FB_AUTH_DOMAIN || "",
+    projectId: process.env.FB_PROJECT_ID || "aaa-infinity-ai",
+    storageBucket: process.env.FB_STORAGE_BUCKET || "",
+    messagingSenderId: process.env.FB_MESSAGING_SENDER_ID || "",
+    appId: process.env.FB_APP_ID || ""
+  });
 });
 
-/**
- * Endpoint to generate RTC token
- * Query params:
- *  - channel: name of the video room (required)
- *  - uid: numeric user ID (optional, defaults to 0)
- *  - role: publisher or subscriber (optional, defaults to publisher)
- */
-app.get('/api/token', (req, res) => {
-  const channelName = req.query.channel;
-  if (!channelName) {
-    return res.status(400).json({ error: 'channel query parameter is required' });
-  }
+// ---- Agora token ----
+const { RtcTokenBuilder, RtcRole } = (() => {
+  try { return require("agora-token"); } catch (e) { return {}; }
+})();
 
-  let uid = parseInt(req.query.uid || 0, 10);
-  if (isNaN(uid)) {
-    uid = 0;
-  }
-
-  let role = RtcRole.PUBLISHER;
-  if (req.query.role === 'subscriber') {
-    role = RtcRole.SUBSCRIBER;
-  }
-
-  const expirationTimeInSeconds = 3600; // 1 hour token validity
-  const currentTimestamp = Math.floor(Date.now() / 1000);
-  const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
-
+app.get("/api/token", (req, res) => {
+  const channel = req.query.channel;
+  if (!channel) return res.status(400).json({ error: "channel required" });
+  if (!RtcTokenBuilder) return res.status(503).json({ error: "token service unavailable" });
+  let uid = parseInt(req.query.uid || "0", 10);
+  if (isNaN(uid)) uid = 0;
+  const exp = Math.floor(Date.now() / 1000) + 3600;
   try {
-    const token = RtcTokenBuilder.buildTokenWithUid(
-      APP_ID,
-      APP_CERTIFICATE,
-      channelName,
-      uid,
-      role,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
-
-    return res.json({
-      token: token,
-      appId: APP_ID,
-      uid: uid,
-      channel: channelName
-    });
-  } catch (error) {
-    console.error('Error generating Agora token:', error);
-    return res.status(500).json({ error: 'Failed to generate token' });
-  }
-});
-
-// In-memory active room registry (per Render instance).
-// NOTE: Render free instances sleep / restart, so this is best-effort discovery.
-// We still keep it in server memory as requested; rooms self-age-out via lastSeen.
-const ROOM_TTL = 10 * 60 * 1000; // 10 min with no activity -> dropped
-const activeRooms = new Map(); // channel -> { channel, count, lastSeen, host }
-const deletedRooms = new Set(); // channels explicitly ended by host
-
-function touchRoom(channel, delta = 1, host = null) {
-  if (!channel) return;
-  if (deletedRooms.has(channel)) return; // room was ended by host
-  const now = Date.now();
-  const room = activeRooms.get(channel) || { channel, count: 0, lastSeen: now, host };
-  room.count = Math.max(0, room.count + delta);
-  room.lastSeen = now;
-  if (host) room.host = host;
-  if (room.count === 0) {
-    // keep a short grace period so discovery can still show it briefly
-    room.lastSeen = now;
-    if (room.count <= 0) activeRooms.delete(channel);
-  } else activeRooms.set(channel, room);
-}
-
-function cleanupRooms() {
-  const now = Date.now();
-  for (const [channel, room] of activeRooms) {
-    if (now - room.lastSeen > ROOM_TTL) {
-      activeRooms.delete(channel);
-      deletedRooms.delete(channel);
-    }
-  }
-}
-setInterval(cleanupRooms, 60 * 1000);
-
-// Called by the app to announce join/leave so discovery reflects live activity.
-app.post('/api/presence', (req, res) => {
-  const channel = req.body && req.body.channel;
-  const action = req.body && req.body.action; // "join" | "leave"
-  const host = req.body && req.body.host;
-  if (!channel || (action !== 'join' && action !== 'leave')) {
-    return res.status(400).json({ error: 'channel and action(join|leave) required' });
-  }
-  if (deletedRooms.has(channel) && action === 'join') {
-    return res.status(410).json({ error: 'room-ended', ended: true, existed: false });
-  }
-  const existedBefore = activeRooms.has(channel);
-  touchRoom(channel, action === 'join' ? 1 : -1, host);
-  res.json({ ok: true, ended: deletedRooms.has(channel), existed: existedBefore });
-});
-
-// Host ends a room for everyone -> marks it deleted so late joiners are rejected.
-app.post('/api/rooms/delete', (req, res) => {
-  const channel = req.body && req.body.channel;
-  if (!channel) return res.status(400).json({ error: 'channel required' });
-  deletedRooms.add(channel);
-  activeRooms.delete(channel);
-  res.json({ ok: true });
-});
-
-// Discovery / "Nearby" endpoint: returns currently live rooms.
-app.get('/api/rooms', (req, res) => {
-  const now = Date.now();
-  const rooms = [];
-  for (const [channel, room] of activeRooms) {
-    if (now - room.lastSeen > ROOM_TTL) { activeRooms.delete(channel); continue; }
-    rooms.push({ channel: room.channel, count: room.count, lastSeen: room.lastSeen, host: !!room.host });
-  }
-  rooms.sort((a, b) => b.lastSeen - a.lastSeen);
-  res.json({ rooms });
-});
-
-// Basic health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', appIdConfigured: !!APP_ID, certificateConfigured: !!APP_CERTIFICATE, activeRooms: activeRooms.size });
-});
-
-// ---------- AI Assistant proxy ----------
-// Keeps the provider API key server-side (never exposed to the APK).
-// Configure via env: NARA_BASE_URL (e.g. https://<host>/v1) and NARA_API_KEY.
-const NARA_BASE_URL = (process.env.NARA_BASE_URL || "").replace(/\/$/, "");
-const NARA_API_KEY = process.env.NARA_API_KEY || "";
-const AI_MODELS = [
-  "tencent-hy3",
-  "mistral-medium-3-5",
-  "mistral-large",
-  "glm-5.2-free",
-  "agnes-2.0-flash"
-];
-
-app.get('/api/ai/models', (req, res) => {
-  res.json({ models: AI_MODELS, configured: !!NARA_API_KEY && !!NARA_BASE_URL });
-});
-
-app.post('/api/ai/chat', async (req, res) => {
-  if (!NARA_BASE_URL || !NARA_API_KEY) {
-    return res.status(503).json({ error: "AI not configured on server" });
-  }
-  const { model, messages } = req.body || {};
-  if (!model || !Array.isArray(messages)) {
-    return res.status(400).json({ error: "model and messages required" });
-  }
-  try {
-    const upstream = await fetch(`${NARA_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${NARA_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ model, messages, stream: false })
-    });
-    const data = await upstream.json().catch(() => ({}));
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: data.error?.message || "AI provider error", raw: data });
-    }
-    const reply = data.choices?.[0]?.message?.content || "";
-    res.json({ reply });
+    const token = RtcTokenBuilder.buildTokenWithUid(APP_ID, APP_CERTIFICATE, channel, uid, RtcRole.PUBLISHER, exp, exp);
+    res.json({ token, appId: APP_ID, uid, channel });
   } catch (e) {
-    console.error("AI proxy error:", e.message);
-    res.status(502).json({ error: "Failed to reach AI provider" });
+    res.status(500).json({ error: "token gen failed" });
   }
 });
 
-// APK downloads are hosted on the GitHub Release (artifacts), not on this server,
-// to keep the VM disk usage low. See README for the download links.
+// ---- Firebase Admin (optional, only if creds present) ----
+let admin = null;
+try {
+  admin = require("firebase-admin");
+  if (process.env.FB_SERVICE_ACCOUNT) {
+    const sa = JSON.parse(process.env.FB_SERVICE_ACCOUNT);
+    if (!admin.apps.length) {
+      admin.initializeApp({ credential: admin.credential.cert(sa), databaseURL: process.env.FB_DATABASE_URL || undefined });
+    }
+    console.log("Firebase Admin initialized");
+  }
+} catch (e) {
+  console.log("Firebase Admin not initialized:", e.message);
+}
 
-app.listen(PORT, () => {
-  console.log(`AgoraMeet token server running at http://localhost:${PORT}`);
+// Verify a Firebase ID token (used by clients that want server trust)
+app.post("/api/verify", async (req, res) => {
+  if (!admin) return res.status(503).json({ error: "firebase not configured" });
+  const { idToken } = req.body || {};
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    res.json({ uid: decoded.uid, phone: decoded.phone_number || null, name: decoded.name || null });
+  } catch (e) {
+    res.status(401).json({ error: "invalid token" });
+  }
 });
+
+// Send FCM push to a device token
+app.post("/api/push", async (req, res) => {
+  if (!admin) return res.status(503).json({ error: "firebase not configured" });
+  const { token, title, body, data } = req.body || {};
+  if (!token) return res.status(400).json({ error: "token required" });
+  try {
+    const r = await admin.messaging().send({ token, notification: { title, body }, data: data || {} });
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Cloudflare Realtime (backup call transport) ----
+// appSecret stays server-side; client only gets appId, server proxies session/track calls.
+const CF_APP_ID = process.env.CF_APP_ID || "";
+const CF_APP_SECRET = process.env.CF_APP_SECRET || "";
+const CF_BASE = "https://rtc.live.cloudflare.com/v1";
+
+app.get("/api/cf/config", (req, res) => res.json({ appId: CF_APP_ID, available: !!CF_APP_SECRET }));
+
+async function cfRequest(path, body, method = "POST") {
+  const r = await fetch(`${CF_BASE}/apps/${CF_APP_ID}${path}`, {
+    method, headers: { "content-type": "application/json", Authorization: `Bearer ${CF_APP_SECRET}` }, body: body ? JSON.stringify(body) : undefined
+  });
+  return r.json();
+}
+
+app.post("/api/cf/session/new", async (req, res) => {
+  if (!CF_APP_SECRET) return res.status(503).json({ error: "cf not configured" });
+  const { sdp } = req.body || {};
+  const r = await cfRequest("/sessions/new", { sessionDescription: { type: "offer", sdp } });
+  res.json(r);
+});
+app.post("/api/cf/tracks/new", async (req, res) => {
+  if (!CF_APP_SECRET) return res.status(503).json({ error: "cf not configured" });
+  const { sessionId, tracks, sdp } = req.body || {};
+  const body = { tracks };
+  if (sdp) body.sessionDescription = { type: "offer", sdp };
+  const r = await cfRequest(`/sessions/${sessionId}/tracks/new`, body);
+  res.json(r);
+});
+app.put("/api/cf/tracks/renegotiate", async (req, res) => {
+  if (!CF_APP_SECRET) return res.status(503).json({ error: "cf not configured" });
+  const { sessionId, sdp } = req.body || {};
+  const r = await cfRequest(`/sessions/${sessionId}/renegotiate`, { sessionDescription: { type: "answer", sdp } }, "PUT");
+  res.json(r);
+});
+
+// ---- NaraRouter AI proxy (keeps API key server-side) ----
+const NARA_BASE = process.env.NARA_BASE_URL || "https://router.bynara.id/v1";
+const NARA_KEY = process.env.NARA_API_KEY || "";
+
+app.get("/api/ai/models", (req, res) => {
+  res.json({ models: ["tencent-hy3", "mistral-medium-3-5", "mistral-large", "glm-5.2-free", "agnes-2.0-flash"], available: !!NARA_KEY });
+});
+
+app.post("/api/ai/chat", async (req, res) => {
+  if (!NARA_KEY) return res.status(503).json({ error: "ai not configured" });
+  const { messages, model } = req.body || {};
+  if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ error: "messages required" });
+  try {
+    const r = await fetch(`${NARA_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${NARA_KEY}` },
+      body: JSON.stringify({ model: model || "tencent-hy3", messages, stream: false })
+    });
+    const data = await r.json();
+    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || "ai error" });
+    res.json({ reply: data.choices?.[0]?.message?.content || "", raw: data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", agora: !!RtcTokenBuilder, firebase: !!admin, cloudflare: !!CF_APP_SECRET, ai: !!NARA_KEY });
+});
+
+app.listen(PORT, () => console.log(`AgoraMeet v2 server on :${PORT}`));
