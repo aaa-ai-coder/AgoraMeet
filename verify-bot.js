@@ -1,21 +1,19 @@
 // verify-bot.js - AgoraMeet Telegram phone-verification bot
-// Receives /start <code>, asks user to reply YES, then calls the server's confirm endpoint.
+// Receives /start <code>, shows an inline "Confirm login" button, then calls the server's confirm endpoint.
 const BOT_TOKEN = process.env.VERIFY_BOT_TOKEN;
 if (!BOT_TOKEN) { console.error("Set VERIFY_BOT_TOKEN"); process.exit(1); }
 const SERVER = process.env.AGORAMEET_SERVER || "https://agorameet-server.onrender.com";
 const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-const pending = {}; // chatId -> code
-
-async function sendText(chatId, text) {
-  await fetch(`${API}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text }) });
+async function call(method, body) {
+  const r = await fetch(`${API}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
 }
-
 async function confirm(code, chatId) {
   const r = await fetch(`${SERVER}/api/bot/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, chatId }) });
   const j = await r.json();
-  if (j.ok) await sendText(chatId, `Verified ${j.phone || ""}. You can close Telegram and return to the AgoraMeet app.`);
-  else await sendText(chatId, "Verification failed: " + (j.error || "unknown"));
+  if (j.ok) await call("sendMessage", { chat_id: chatId, text: `Verified ${j.phone || "your number"} ✅\nYou can close Telegram and return to the AgoraMeet app.` });
+  else await call("sendMessage", { chat_id: chatId, text: "Verification failed: " + (j.error || "unknown") });
 }
 
 async function poll() {
@@ -26,16 +24,27 @@ async function poll() {
     if (d.ok && d.result.length) {
       for (const u of d.result) {
         off = u.update_id + 1;
-        const msg = u.message; if (!msg) continue;
-        const cid = String(msg.chat.id);
-        const text = (msg.text || "").trim();
-        if (text.startsWith("/start")) {
-          const code = text.split(" ")[1];
-          if (code) { pending[cid] = code; await sendText(cid, `Login code received.\n\nReply YES to confirm you want to log in to AgoraMeet with this phone number.`); }
-          else await sendText(cid, "Hello! Use the button in the AgoraMeet app to start verification.");
-        } else if (/^yes$/i.test(text) && pending[cid]) {
-          const code = pending[cid]; delete pending[cid];
-          await confirm(code, cid);
+        if (u.message && u.message.text && u.message.text.startsWith("/start")) {
+          const code = u.message.text.split(" ")[1];
+          const cid = String(u.message.chat.id);
+          if (code) {
+            await call("sendMessage", {
+              chat_id: cid,
+              text: "Login code received.\n\nTap the button below to confirm you want to log in to AgoraMeet with this phone number.",
+              reply_markup: { inline_keyboard: [[{ text: "✅ Confirm login", callback_data: "confirm:" + code }]] }
+            });
+          } else {
+            await call("sendMessage", { chat_id: cid, text: "Hello! Use the button in the AgoraMeet app to start verification." });
+          }
+        } else if (u.callback_query) {
+          const cb = u.callback_query;
+          const cid = String(cb.message.chat.id);
+          await call("answerCallbackQuery", { callback_query_id: cb.id });
+          if (cb.data && cb.data.startsWith("confirm:")) {
+            const code = cb.data.split("confirm:")[1];
+            await call("editMessageText", { chat_id: cid, message_id: cb.message.message_id, text: "Verifying…" });
+            await confirm(code, cid);
+          }
         }
       }
     }

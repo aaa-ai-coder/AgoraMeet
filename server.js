@@ -168,6 +168,7 @@ app.post("/api/auth/start", async (req, res) => {
   const code = String(Math.floor(100000 + Math.random() * 900000));
   try {
     await admin.firestore().collection("users").doc(full).set({
+      phone: full,
       verifyCode: code,
       codeExpires: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 5 * 60 * 1000)),
       phoneVerified: false
@@ -212,10 +213,11 @@ app.post("/api/bot/confirm", async (req, res) => {
   const { code, chatId } = req.body || {};
   if (!code) return res.status(400).json({ error: "code required" });
   try {
-    const snap = await admin.firestore().collection("users").where("verifyCode", "==", code).where("phoneVerified", "==", false).get();
+    const snap = await admin.firestore().collection("users").where("verifyCode", "==", code).get();
     if (snap.empty) return res.status(404).json({ error: "code not found or already used" });
     const ref = snap.docs[0].ref;
     const d = snap.docs[0].data();
+    if (d.phoneVerified) return res.status(409).json({ error: "code already used" });
     if (d.codeExpires && d.codeExpires.toDate() < new Date()) return res.status(410).json({ error: "code expired" });
     await ref.set({ phoneVerified: true, tgChatId: String(chatId), verifyCode: admin.firestore.FieldValue.delete() }, { merge: true });
     res.json({ ok: true, phone: d.phone || d.uid || "" });

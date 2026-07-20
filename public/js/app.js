@@ -1,5 +1,4 @@
 // app.js - AgoraMeet v2 (WhatsApp-style)
-const VERSION = "2.3.0";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -10,6 +9,7 @@ import {
   addDoc, getDocs, serverTimestamp, getDoc, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+const VERSION = "2.3.1";
 const $ = (id) => document.getElementById(id);
 const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.onrender.com";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
@@ -101,7 +101,7 @@ function getVerifier() {
   return recaptchaReady;
 }
 
-let tgPhone = null, tgPollTimer = null;
+let tgPhone = null, tgPollTimer = null, tgDeadline = 0;
 async function startTelegramVerify() {
   if (!auth) { err("App still loading, wait a moment…"); return; }
   const cc = $("countryCode").value;
@@ -118,12 +118,14 @@ async function startTelegramVerify() {
     $("tgOpen").href = data.deepLink;
     $("tgHint").classList.remove("hidden");
     $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
-    $("tgStatus").textContent = "Waiting for confirmation…";
+    $("tgStatus").textContent = "Open Telegram and tap Confirm login…";
     if (tgPollTimer) clearInterval(tgPollTimer);
+    tgDeadline = Date.now() + 5 * 60 * 1000;
     tgPollTimer = setInterval(pollTelegramStatus, 3000);
   } catch (e) {
     err(e.message || "Verification failed");
-  } finally { $("sendOtpBtn").disabled = false; }
+    $("sendOtpBtn").disabled = false;
+  }
 }
 async function pollTelegramStatus() {
   try {
@@ -133,6 +135,12 @@ async function pollTelegramStatus() {
       clearInterval(tgPollTimer); tgPollTimer = null;
       $("tgStatus").textContent = "Verified! Signing in…";
       await signInWithCustomToken(auth, data.token);
+      return;
+    }
+    if (Date.now() > tgDeadline) {
+      clearInterval(tgPollTimer); tgPollTimer = null;
+      $("tgStatus").textContent = "Timed out. Go back and try again.";
+      $("sendOtpBtn").disabled = false;
     }
   } catch (e) {}
 }
@@ -265,7 +273,8 @@ async function openConversation(peerUid, peerName, type = "user") {
       const mine = m.from === currentUser.uid;
       div.className = "msg " + (mine ? "out" : "in");
       const who = (type === "group" && !mine && m.fromName) ? `<b style="color:#7fd;">${esc(m.fromName)}:</b> ` : "";
-      div.innerHTML = who + esc(m.text) + `<span class="t">${timeStr(m.ts)}</span>`;
+      const ticks = mine ? '<span class="ticks">✓✓</span>' : "";
+      div.innerHTML = who + esc(m.text) + ticks + `<span class="t">${timeStr(m.ts)}</span>`;
       box.appendChild(div);
     });
     box.scrollTop = box.scrollHeight;
