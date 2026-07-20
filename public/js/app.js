@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  RecaptchaVerifier, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithRedirect, getRedirectResult, sendPasswordResetEmail
+  RecaptchaVerifier, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithRedirect, getRedirectResult, sendPasswordResetEmail, signInWithCustomToken
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit,
@@ -99,42 +99,43 @@ function getVerifier() {
   return recaptchaReady;
 }
 
-async function sendOtp() {
+let tgPhone = null, tgPollTimer = null;
+async function startTelegramVerify() {
   if (!auth) { err("App still loading, wait a moment…"); return; }
   const cc = $("countryCode").value;
   let phone = $("phoneInput").value.trim().replace(/[^0-9]/g, "");
   if (!/^\d{6,15}$/.test(phone)) { err("Enter a valid number (digits only)"); return; }
   clearErr();
   $("sendOtpBtn").disabled = true;
+  tgPhone = "+" + cc + phone;
   try {
-    const verifier = await getVerifier();
-    const full = "+" + cc + phone;
-    window.confirmationResult = await signInWithPhoneNumber(auth, full, verifier);
+    const r = await fetch(api("/api/auth/start"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: tgPhone }) });
+    const data = await r.json();
+    if (!r.ok || !data.deepLink) throw new Error(data.error || "Could not start verification");
+    $("tgPhone").textContent = tgPhone;
+    $("tgOpen").href = data.deepLink;
+    $("tgHint").classList.remove("hidden");
     $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
-    $("otpInput").focus();
-    toast("Code sent to " + full);
+    $("tgStatus").textContent = "Waiting for confirmation…";
+    if (tgPollTimer) clearInterval(tgPollTimer);
+    tgPollTimer = setInterval(pollTelegramStatus, 3000);
   } catch (e) {
-    if (e && e.message && /already been rendered/.test(e.message)) {
-      // recover: recreate verifier on a fresh element
-      try { window.recaptchaVerifier.clear(); } catch (_) {}
-      window.recaptchaVerifier = null; recaptchaReady = null;
-      try { const v = await getVerifier(); window.confirmationResult = await signInWithPhoneNumber(auth, "+" + cc + phone, v); $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden"); $("otpInput").focus(); toast("Code sent to +" + cc + phone); return; } catch (e2) { err(friendly(e2)); }
-    } else err(friendly(e));
+    err(e.message || "Verification failed");
   } finally { $("sendOtpBtn").disabled = false; }
 }
-$("sendOtpBtn").onclick = sendOtp;
-$("resendLink").onclick = () => sendOtp();
-
-$("verifyOtpBtn").onclick = async () => {
-  const code = $("otpInput").value.trim();
-  if (!code) { err("Enter the code"); return; }
-  clearErr();
+async function pollTelegramStatus() {
   try {
-    await window.confirmationResult.confirm(code);
-  } catch (e) {
-    err("Wrong or expired code. Try again.");
-  }
-};
+    const r = await fetch(api("/api/auth/status?phone=" + encodeURIComponent(tgPhone)));
+    const data = await r.json();
+    if (data.verified && data.token) {
+      clearInterval(tgPollTimer); tgPollTimer = null;
+      $("tgStatus").textContent = "Verified! Signing in…";
+      await signInWithCustomToken(auth, data.token);
+    }
+  } catch (e) {}
+}
+$("sendOtpBtn").onclick = startTelegramVerify;
+$("resendLink").onclick = () => { if (tgPollTimer) clearInterval(tgPollTimer); tgPollTimer = null; $("otpStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
 
 $("emailBtn").onclick = async () => {
   const e = $("emailInput").value.trim(), p = $("passwordInput").value;

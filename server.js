@@ -156,4 +156,72 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", agora: !!RtcTokenBuilder, firebase: !!admin, cloudflare: !!CF_APP_SECRET, ai: !!NARA_KEY });
 });
 
+// ---- Telegram phone verification (replaces Firebase SMS; no billing needed) ----
+const VERIFY_BOT_USERNAME = process.env.VERIFY_BOT_USERNAME || "AgoraMeet_Login_bot";
+
+// Start: app sends phone -> server makes code, returns deep link
+app.post("/api/auth/start", async (req, res) => {
+  if (!admin) return res.status(503).json({ error: "firebase not configured" });
+  const phone = (req.body.phone || "").replace(/[^0-9+]/g, "");
+  if (!/^\+?\d{6,15}$/.test(phone)) return res.status(400).json({ error: "invalid phone" });
+  const full = phone.startsWith("+") ? phone : "+" + phone;
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  try {
+    await admin.firestore().collection("users").doc(full).set({
+      verifyCode: code,
+      codeExpires: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 5 * 60 * 1000)),
+      phoneVerified: false
+    }, { merge: true });
+    const deepLink = `https://t.me/${VERIFY_BOT_USERNAME}?start=${code}`;
+    res.json({ ok: true, deepLink, phone: full });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Status: app polls this; returns custom token once verified
+app.get("/api/auth/status", async (req, res) => {
+  if (!admin) return res.status(503).json({ error: "firebase not configured" });
+  const phone = (req.query.phone || "").replace(/[^0-9+]/g, "");
+  const full = phone.startsWith("+") ? phone : "+" + phone;
+  try {
+    const doc = await admin.firestore().collection("users").doc(full).get();
+    const d = doc.data() || {};
+    if (!d.phoneVerified) return res.json({ verified: false });
+    // find or create Firebase user by phone
+    let uid;
+    try {
+      const u = await admin.auth().getUserByPhoneNumber(full);
+      uid = u.uid;
+    } catch (e) {
+      const u = await admin.auth().createUser({ phoneNumber: full });
+      uid = u.uid;
+    }
+    // make sure users doc has uid + name
+    await admin.firestore().collection("users").doc(full).set({ uid, name: full, phone: full, online: true }, { merge: true });
+    const token = await admin.auth().createCustomToken(uid);
+    res.json({ verified: true, token, uid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Confirm: called by the verify bot after user replies YES
+app.post("/api/bot/confirm", async (req, res) => {
+  if (!admin) return res.status(503).json({ error: "firebase not configured" });
+  const { code, chatId } = req.body || {};
+  if (!code) return res.status(400).json({ error: "code required" });
+  try {
+    const snap = await admin.firestore().collection("users").where("verifyCode", "==", code).where("phoneVerified", "==", false).get();
+    if (snap.empty) return res.status(404).json({ error: "code not found or already used" });
+    const ref = snap.docs[0].ref;
+    const d = snap.docs[0].data();
+    if (d.codeExpires && d.codeExpires.toDate() < new Date()) return res.status(410).json({ error: "code expired" });
+    await ref.set({ phoneVerified: true, tgChatId: String(chatId), verifyCode: admin.firestore.FieldValue.delete() }, { merge: true });
+    res.json({ ok: true, phone: d.phone || d.uid || "" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`AgoraMeet v2 server on :${PORT}`));
