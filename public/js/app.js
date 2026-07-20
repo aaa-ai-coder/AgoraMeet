@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithPhoneNumber, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  RecaptchaVerifier, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, signInWithCredential
+  RecaptchaVerifier, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithRedirect, getRedirectResult, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit,
@@ -131,29 +131,51 @@ $("emailBtn").onclick = async () => {
   const e = $("emailInput").value.trim(), p = $("passwordInput").value;
   if (!e || !p) { err("Email and password required"); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { err("Enter a valid email"); return; }
+  if (p.length < 6) { err("Password must be at least 6 characters"); return; }
   clearErr();
-  $("emailBtn").disabled = true;
+  $("emailBtn").disabled = true; $("emailBtn").textContent = "Please wait…";
   try {
     await signInWithEmailAndPassword(auth, e, p);
   } catch (err) {
     if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
       try { await createUserWithEmailAndPassword(auth, e, p); }
       catch (e2) { err(friendly(e2)); }
+    } else if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+      err("Wrong email or password");
     } else { err(friendly(err)); }
-  } finally { $("emailBtn").disabled = false; }
+  } finally { $("emailBtn").disabled = false; $("emailBtn").textContent = "Sign in / Create account"; }
+};
+
+$("pwToggle").onclick = () => {
+  const i = $("passwordInput");
+  i.type = i.type === "password" ? "text" : "password";
+  $("pwToggle").innerHTML = i.type === "password" ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
+};
+
+$("forgotPw").onclick = async () => {
+  const e = $("emailInput").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { err("Enter your email first"); return; }
+  try { await sendPasswordResetEmail(auth, e); toast("Reset link sent to " + e); }
+  catch (er) { err(friendly(er)); }
 };
 
 $("googleBtn").onclick = async () => {
   if (!auth) { err("App still loading, wait a moment…"); return; }
   clearErr();
-  $("googleBtn").disabled = true;
   try {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    provider.setCustomParameters({ prompt: "select_account" });
+    // Redirect stays in-app (custom tab) unlike popup which opens external browser on Android WebView
+    await signInWithRedirect(auth, provider);
   } catch (e) {
     err(friendly(e));
-  } finally { $("googleBtn").disabled = false; }
+  }
 };
+
+// Complete Google sign-in when returning from redirect
+getRedirectResult(auth).then(userCred => {
+  if (userCred && userCred.user) toast("Signed in as " + (userCred.user.displayName || userCred.user.email));
+}).catch(e => { if (e && e.code) err(friendly(e)); });
 
 function friendly(e) {
   const c = e && e.code;
@@ -170,7 +192,9 @@ function friendly(e) {
     "auth/weak-password": "Password too weak (min 6 chars).",
     "auth/invalid-email": "Invalid email address.",
     "auth/api-key-not-set": "App not configured (missing Firebase web key).",
-    "auth/invalid-api-key": "Firebase web API key is invalid."
+    "auth/invalid-api-key": "Firebase web API key is invalid.",
+    "auth/operation-not-allowed": "This sign-in method is not enabled. Contact support.",
+    "auth/missing-phone-number": "Enter a phone number."
   };
   return (c && map[c]) || e.message || "Something went wrong.";
 }
@@ -516,7 +540,9 @@ $("callChatSend").onclick = async () => {
 };
 
 // ---------------- BOOT ----------------
-loadFirebase().catch(e => {
+$("authLoader").classList.remove("hidden");
+loadFirebase().then(() => $("authLoader").classList.add("hidden")).catch(e => {
+  $("authLoader").classList.add("hidden");
   err("App failed to load: " + e.message);
   toast(e.message);
 });

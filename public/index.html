@@ -40,13 +40,18 @@
         </div>
         <div id="emailStep" class="hidden">
           <label>Email</label>
-          <input id="emailInput" type="email" placeholder="you@email.com" autocomplete="off">
+          <input id="emailInput" type="email" placeholder="you@email.com" autocomplete="email">
           <label>Password</label>
-          <input id="passwordInput" type="password" placeholder="••••••••" autocomplete="off">
-          <button id="emailBtn" class="btn-primary">Sign in</button>
+          <div class="phone-row" style="padding:0 14px">
+            <input id="passwordInput" type="password" placeholder="••••••••" autocomplete="current-password" style="padding:14px 0">
+            <button id="pwToggle" class="icon-btn" type="button" title="Show/Hide"><i class="fa-solid fa-eye"></i></button>
+          </div>
+          <button id="emailBtn" class="btn-primary">Sign in / Create account</button>
+          <p class="alt-link" id="forgotPw">Forgot password?</p>
           <p class="alt-link" id="usePhoneLink">Use phone instead</p>
         </div>
         <p id="authError" class="error hidden"></p>
+        <div id="authLoader" class="auth-loader hidden"><div class="spinner"></div><span>Connecting…</span></div>
         <div id="recaptcha"></div>
       </div>
     </section>
