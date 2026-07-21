@@ -476,6 +476,14 @@ export default {
         return json({ ok: true });
       }
 
+      // Send APK links to Telegram admin
+      if (url.pathname === "/api/send-apk" && env.VERIFY_BOT_TOKEN) {
+        const adminChat = "6727787768";
+        const msg = `🎉 *AgoraMeet v3.0.0 APK ready!*\n\nDownload:\n• [AgoraMeet](${env.GH_RELEASE || "https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v3.0.0/AgoraMeet-v3.0.0.apk"})\n• [AgoraMeet2](${env.GH_RELEASE2 || "https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v3.0.0/AgoraMeet2-v3.0.0.apk"})\n\nOr get both from GitHub Releases.`;
+        await tg(env)("sendMessage", { chat_id: adminChat, text: msg, parse_mode: "Markdown", disable_web_page_preview: true });
+        return json({ ok: true, sent: true });
+      }
+
       // Static assets (index.html, js, css, icons...) served from the Worker
       return env.ASSETS.fetch(request);
     } catch (e) {

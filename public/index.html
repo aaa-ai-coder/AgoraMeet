@@ -112,13 +112,13 @@
           <div id="statusList" class="chat-list"></div>
         </div>
 
-        <!-- AI Assistant -->
+        <!-- AI Assistant (Google Assistant style) -->
         <div id="aiView" class="view">
           <div class="conv-header">
             <button id="aiBackBtn" class="icon-btn"><i class="fa-solid fa-arrow-left"></i></button>
-            <div class="conv-avatar" style="background:#00a884">AI</div>
+            <div class="conv-avatar" style="background:linear-gradient(135deg,#4285f4,#ea4335,#fbbc05,#34a853)">AI</div>
             <div class="conv-meta">
-              <div class="conv-name">AI Assistant</div>
+              <div class="conv-name">Agora Assistant</div>
               <div class="conv-status" id="aiStatus">ready</div>
             </div>
             <select id="aiModel" class="ai-model-select">
@@ -129,11 +129,17 @@
               <option value="agnes-2.0-flash">agnes-2.0-flash</option>
             </select>
             <button id="aiClearBtn" class="icon-btn" title="Clear"><i class="fa-solid fa-trash"></i></button>
+            <button id="aiWakeBtn" class="icon-btn" title="Hey Agora"><i class="fa-solid fa-ear-listen"></i></button>
           </div>
           <div id="aiMessages" class="messages"></div>
+          <!-- Assistant glow bar -->
+          <div id="aiGlowBar" class="ai-glow-bar hidden"></div>
+          <!-- Action suggestions -->
+          <div id="aiSuggestions" class="ai-suggestions hidden"></div>
           <div class="composer">
-            <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
-            <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+            <button id="aiVoiceBtn" class="composer-btn" title="Voice input" style="color:var(--teal)!important"><i class="fa-solid fa-microphone"></i></button>
+            <input id="aiInput" placeholder="Ask or type a command…" autocomplete="off">
+            <button id="aiSendBtn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
           </div>
         </div>
 

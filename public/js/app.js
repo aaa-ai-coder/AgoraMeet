@@ -86,6 +86,7 @@ function showView(v) {
   if (v === "chatsView") { if (unsubMessages) unsubMessages(); unsubMessages = null; }
   if (v === "statusView") loadStatus();
   if (v === "settingsView") loadSettings();
+  if (v === "aiView") { $("aiInput").focus(); showAiSuggestions(); }
 }
 document.querySelectorAll(".bottomnav .bn").forEach(b => b.onclick = () => showView(b.dataset.view));
 
@@ -884,41 +885,301 @@ $("setCallsBtn").onclick = async () => {
 };
 $("viewerBackBtn").onclick = () => showView("chatsView");
 
-// ---------------- AI ASSISTANT (NaraRouter via server proxy) ----------------
-const AI_SYSTEM = "You are AgoraMeet AI, a helpful assistant inside a messaging app.";
+// ---------------- AI ASSISTANT (Google Assistant style) ----------------
+const AI_SYSTEM = `You are Agora Assistant, an AI helper inside AgoraMeet messaging app. You can:
+- Answer questions, chat, help with tasks
+- Execute phone actions when user asks: call, SMS, navigate, search, open websites
+- Know the current context (time, date, user name)
+- Be conversational and helpful like Google Assistant
+- When the user asks for a phone action, respond with structured action using format: ##ACTION##{"type":"call","value":"1234567890"}##END##
+Supported action types: call (tel:), sms (sms:), navigate (geo:), search (https://google.com/search?q=), open (https://), screenshot
+
+Current context: Date is ${new Date().toLocaleDateString()}, Time is ${new Date().toLocaleTimeString()}.`;
 let aiHistory = [{ role: "system", content: AI_SYSTEM }];
 let aiModel = "tencent-hy3";
-function aiBubble(role, text) {
+let aiRecognition = null;
+let aiWakeListening = false;
+
+// Suggestions chips
+const AI_SUGGESTIONS = [
+  "Call me", "Send an SMS", "Search the web", "Navigate home",
+  "What can you do?", "Set a reminder", "Take me to settings", "Tell me a joke"
+];
+
+function showAiSuggestions() {
+  const box = $("aiSuggestions");
+  box.innerHTML = AI_SUGGESTIONS.map(s => `<span class="chip" onclick="window.__aiChip('${esc(s)}')">${esc(s)}</span>`).join("");
+  box.classList.remove("hidden");
+}
+window.__aiChip = (text) => { $("aiInput").value = text; $("aiSendBtn").onclick(); };
+
+function aiBubble(role, html, extra = "") {
   const div = document.createElement("div");
   div.className = "msg " + (role === "user" ? "out" : "in");
-  div.innerHTML = esc(text) + '<span class="t"></span>';
+  div.innerHTML = html + (extra || '<span class="t"></span>');
   $("aiMessages").appendChild(div);
   $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
 }
+
+// Parse and execute actions from AI response
+function executeAiActions(reply) {
+  const actionRegex = /##ACTION##(\{.*?\})##END##/g;
+  let match;
+  while ((match = actionRegex.exec(reply)) !== null) {
+    try {
+      const action = JSON.parse(match[1]);
+      switch (action.type) {
+        case "call":
+          window.open("tel:" + action.value, "_self");
+          break;
+        case "sms":
+          window.open("sms:" + action.value + (action.body ? "?body=" + encodeURIComponent(action.body) : ""), "_self");
+          break;
+        case "navigate":
+          window.open("https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(action.value), "_blank");
+          break;
+        case "search":
+          window.open("https://www.google.com/search?q=" + encodeURIComponent(action.value), "_blank");
+          break;
+        case "open":
+          window.open(action.value.startsWith("http") ? action.value : "https://" + action.value, "_blank");
+          break;
+      }
+    } catch (e) {}
+  }
+  // Return clean text (without action markers)
+  return reply.replace(/##ACTION##\{.*?\}##END##/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Speak response aloud
+function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/##ACTION##.*?##END##/g, "").replace(/<[^>]*>/g, ""));
+  u.lang = "en-US";
+  u.rate = 1.0;
+  u.pitch = 1.0;
+  // Prefer female voice
+  const voices = speechSynthesis.getVoices();
+  const fem = voices.find(v => v.name.includes("Female") || v.name.includes("Samantha"));
+  if (fem) u.voice = fem;
+  speechSynthesis.speak(u);
+}
+
 $("aiModel").onchange = () => { aiModel = $("aiModel").value; };
-$("aiClearBtn").onclick = () => { aiHistory = [{ role: "system", content: AI_SYSTEM }]; $("aiMessages").innerHTML = ""; toast("Chat cleared"); };
-$("aiBackBtn").onclick = () => showView("chatsView");
-$("aiSendBtn").onclick = async () => {
-  const text = $("aiInput").value.trim();
+$("aiClearBtn").onclick = () => {
+  aiHistory = [{ role: "system", content: AI_SYSTEM }];
+  $("aiMessages").innerHTML = "";
+  $("aiGlowBar").classList.add("hidden");
+  window.speechSynthesis && window.speechSynthesis.cancel();
+  toast("Chat cleared");
+};
+$("aiBackBtn").onclick = () => {
+  if (aiRecognition) try { aiRecognition.stop(); } catch(e) {}
+  if (aiWakeListening) stopWakeWord();
+  showView("chatsView");
+};
+
+async function aiSend(text) {
   if (!text) return;
   $("aiInput").value = "";
-  aiBubble("user", text);
+  $("aiSuggestions").classList.add("hidden");
+
+  // Show user bubble
+  aiBubble("user", '<i class="fa-solid fa-user" style="margin-right:6px;opacity:.6"></i>' + esc(text));
+
   aiHistory.push({ role: "user", content: text });
-  $("aiStatus").textContent = "typing…";
+  $("aiStatus").textContent = "thinking…";
+
+  // Show glow bar while thinking
+  $("aiGlowBar").classList.remove("hidden");
+
+  // Detect quick actions locally
+  const lower = text.toLowerCase();
+
   try {
-    const r = await fetch(api("/api/ai/chat"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
+    const r = await fetch(api("/api/ai/chat"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: aiHistory, model: aiModel })
+    });
     const data = await r.json();
-    const reply = data.reply || data.error || "(no response)";
-    aiBubble("assistant", reply);
-    aiHistory.push({ role: "assistant", content: reply });
+    let reply = data.reply || data.error || "(no response)";
+
+    // Execute actions
+    const cleanReply = executeAiActions(reply);
+
+    // Format response
+    let html = '<i class="fa-solid fa-robot" style="margin-right:6px;opacity:.6;color:#4285f4"></i>';
+    if (reply.includes("##ACTION##")) {
+      // Show action card
+      const actionTypes = { call: "phone", sms: "comment", navigate: "location-dot", search: "magnifying-glass", open: "arrow-up-right-from-square" };
+      const actionMatch = reply.match(/"type":"(\w+)"/);
+      const aType = actionMatch ? actionMatch[1] : "bolt";
+      const icon = actionTypes[aType] || "bolt";
+      html += `<span class="ai-action" onclick="executeAiActions('${esc(reply)}')"><i class="fa-solid fa-${icon}"></i> ${esc(cleanReply)}</span>`;
+    } else {
+      html += esc(cleanReply);
+    }
+
+    aiBubble("assistant", html);
+    aiHistory.push({ role: "assistant", content: cleanReply });
+
+    // Speak response aloud (short responses)
+    if (cleanReply.length < 300 && !reply.includes("##ACTION##")) {
+      speakText(cleanReply);
+    }
+
+    // Show suggestions after response
+    showAiSuggestions();
   } catch (e) {
     aiBubble("assistant", "Error: " + e.message);
+    showAiSuggestions();
   }
+
+  $("aiGlowBar").classList.add("hidden");
   $("aiStatus").textContent = "ready";
-};
+}
+
+$("aiSendBtn").onclick = () => aiSend($("aiInput").value.trim());
 $("aiInput").addEventListener("keydown", e => { if (e.key === "Enter") $("aiSendBtn").onclick(); });
-// AI as a contact (open from chats search) — reuse aiView
-function openAI() { aiModel = $("aiModel").value; showView("aiView"); $("aiInput").focus(); }
+
+// Speech recognition (voice input)
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const rec = new SR();
+  rec.lang = "en-US";
+  rec.continuous = false;
+  rec.interimResults = false;
+  return rec;
+}
+
+$("aiVoiceBtn").onclick = () => {
+  if (aiRecognition) {
+    try { aiRecognition.stop(); } catch(e) {}
+    aiRecognition = null;
+    $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    $("aiVoiceBtn").style.color = "var(--teal)!important";
+    return;
+  }
+  const rec = initSpeechRecognition();
+  if (!rec) { toast("Speech recognition not supported"); return; }
+  aiRecognition = rec;
+  rec.onresult = (e) => {
+    const t = e.results[0][0].transcript;
+    $("aiInput").value = t;
+    aiSend(t);
+    $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    $("aiVoiceBtn").style.color = "var(--teal)!important";
+  };
+  rec.onerror = () => {
+    $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    $("aiVoiceBtn").style.color = "var(--teal)!important";
+    toast("Could not hear you");
+  };
+  rec.onend = () => {
+    $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
+    $("aiVoiceBtn").style.color = "var(--teal)!important";
+  };
+  rec.start();
+  $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-circle" style="color:var(--danger);animation:pulse-red 1s infinite"></i>';
+};
+
+// Wake word "Hey Agora"
+function startWakeWord() {
+  const rec = initSpeechRecognition();
+  if (!rec) { toast("Wake word not supported"); return; }
+  aiWakeListening = true;
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript.toLowerCase();
+      if (t.includes("hey agora") || t.includes("hey agor") || t.includes("ok agora")) {
+        rec.stop();
+        aiWakeListening = false;
+        $("aiWakeBtn").style.color = "var(--teal)";
+        showView("aiView");
+        toast("How can I help?");
+        // Start listening for command
+        setTimeout(() => {
+          const cmdRec = initSpeechRecognition();
+          if (cmdRec) {
+            cmdRec.onresult = (e2) => {
+              const cmd = e2.results[0][0].transcript;
+              $("aiInput").value = cmd;
+              aiSend(cmd);
+            };
+            cmdRec.start();
+            $("aiVoiceBtn").onclick();
+          }
+        }, 500);
+      }
+    }
+  };
+  rec.onerror = () => { aiWakeListening = false; $("aiWakeBtn").style.color = ""; };
+  rec.start();
+  $("aiWakeBtn").style.color = "#ea4335";
+  toast("Listening for 'Hey Agora'...");
+}
+function stopWakeWord() {
+  if (aiWakeListening) {
+    aiWakeListening = false;
+    if (window.__wakeRec) try { window.__wakeRec.stop(); } catch(e) {}
+    $("aiWakeBtn").style.color = "";
+    toast("Wake word stopped");
+  }
+}
+$("aiWakeBtn").onclick = () => {
+  if (aiWakeListening) stopWakeWord();
+  else startWakeWord();
+};
+
+// Screenshot & context capture
+async function captureScreenContext() {
+  try {
+    if (!navigator.mediaDevices?.getDisplayMedia) return null;
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    const track = stream.getVideoTracks()[0];
+    const img = await new Promise(resolve => {
+      const c = document.createElement("canvas");
+      const v = document.createElement("video");
+      v.srcObject = stream;
+      v.onloadedmetadata = () => {
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        v.play();
+        setTimeout(() => {
+          c.getContext("2d").drawImage(v, 0, 0);
+          resolve(c.toDataURL("image/jpeg", 0.5));
+          track.stop();
+        }, 100);
+      };
+    });
+    return img;
+  } catch (e) { return null; }
+}
+
+// AI as a contact
+function openAI() {
+  showView("aiView");
+  aiModel = $("aiModel").value;
+  // Refresh system prompt with current context
+  const ctx = `Current context: Date is ${new Date().toLocaleDateString()}, Time is ${new Date().toLocaleTimeString()}. User name: ${currentUser?.displayName || currentUser?.phoneNumber || "User"}.`;
+  if (aiHistory[0]) aiHistory[0].content = AI_SYSTEM.replace(/Current context:.*/, ctx);
+  $("aiInput").focus();
+  showAiSuggestions();
+}
+
+// Add voice command for "Hey Agora" - screenshot context sharing
+$("aiMessages").addEventListener("dblclick", async () => {
+  const img = await captureScreenContext();
+  if (img) {
+    const text = "What's on my screen? " + img;
+    $("aiInput").value = text;
+    aiSend(text);
+    toast("Screen captured!");
+  }
+});
 
 // ---------------- IN-CALL CHAT ----------------
 let callPeer = null;
