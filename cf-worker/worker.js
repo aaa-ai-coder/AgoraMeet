@@ -450,7 +450,7 @@ export default {
         const pkg = url.searchParams.get("pkg");
         if (pkg !== "com.agorameet.app" && pkg !== "com.agorameet.app2") return json({ error: "invalid pkg" }, 400);
         const apkName = pkg === "com.agorameet.app2" ? "com.agorameet.app2-release.apk" : "com.agorameet.app-release.apk";
-        const ghUrl = `https://github.com/aaa-ai-coder/aaa-ai/releases/download/v3.0.0/${apkName}`;
+        const ghUrl = `https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v3.0.0/${apkName}`;
         return Response.redirect(ghUrl, 302);
       }
 
