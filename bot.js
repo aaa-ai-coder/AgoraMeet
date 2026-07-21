@@ -9,8 +9,8 @@ const os = require("os");
 const path = require("path");
 
 const APKS = [
-  { url: "https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v1.2.0/AgoraMeet-v1.2.0-debug.apk", name: "AgoraMeet-v1.2.0.apk", caption: "AgoraMeet (1) - join a room name, e.g. test123" },
-  { url: "https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v1.2.0/AgoraMeet2-v1.2.0-debug.apk", name: "AgoraMeet2-v1.2.0.apk", caption: "AgoraMeet 2 (2nd install) - join the SAME room as (1) to test a call" },
+  { url: "https://github.com/aaa-ai-coder/aaa-ai/releases/download/v3.0.0/com.agorameet.app-release.apk", name: "AgoraMeet-v3.0.0.apk", caption: "AgoraMeet (1) - join a room name, e.g. test123" },
+  { url: "https://github.com/aaa-ai-coder/aaa-ai/releases/download/v3.0.0/com.agorameet.app2-release.apk", name: "AgoraMeet2-v3.0.0.apk", caption: "AgoraMeet 2 (2nd install) - join the SAME room as (1) to test a call" },
 ];
 
 let knownChatId = 6727787768;
