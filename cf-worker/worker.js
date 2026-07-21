@@ -449,7 +449,7 @@ export default {
       if (p === "/api/apk/download" && request.method === "GET") {
         const pkg = url.searchParams.get("pkg");
         if (pkg !== "com.agorameet.app" && pkg !== "com.agorameet.app2") return json({ error: "invalid pkg" }, 400);
-        const apkName = pkg === "com.agorameet.app2" ? "com.agorameet.app2-release.apk" : "com.agorameet.app-release.apk";
+        const apkName = pkg === "com.agorameet.app2" ? "AgoraMeet2-v3.0.0.apk" : "AgoraMeet-v3.0.0.apk";
         const ghUrl = `https://github.com/aaa-ai-coder/AgoraMeet/releases/download/v3.0.0/${apkName}`;
         return Response.redirect(ghUrl, 302);
       }
