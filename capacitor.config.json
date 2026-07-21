@@ -1,10 +1,5 @@
 {
   "appId": "com.agorameet.app",
   "appName": "AgoraMeet",
-  "webDir": "public",
-  "plugins": {
-    "AdMob": {
-      "appId": "ca-app-pub-5356761432305414~6197972179"
-    }
-  }
+  "webDir": "public"
 }
