@@ -1,0 +1,14 @@
+name = "agorameet-server"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "abbe3cc008ebb9dd029ded333fef6e9f"
+workers_dev = true
+
+# Serve the Capacitor web assets straight from the Worker (replaces Render static hosting)
+[assets]
+directory = "../public"
+binding = "ASSETS"
+
+[observability.logs]
+enabled = true

@@ -4,14 +4,15 @@
   "description": "AgoraMeet - WhatsApp-style messenger with Agora video/voice calls and Firebase backend",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server/server.js"
   },
   "dependencies": {
     "agora-token": "^2.0.5",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "firebase-admin": "^12.7.0"
+    "firebase-admin": "^12.7.0",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.0",
