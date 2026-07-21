@@ -97,6 +97,8 @@
         <div id="chatsView" class="view active">
           <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="searchInput" placeholder="Search"></div>
           <div id="chatList" class="chat-list"></div>
+          <!-- Ad banner -->
+          <div id="adBanner" class="ad-banner hidden"></div>
         </div>
 
         <!-- Status / Stories -->
@@ -121,15 +123,10 @@
               <div class="conv-name">Agora Assistant</div>
               <div class="conv-status" id="aiStatus">ready</div>
             </div>
-            <select id="aiModel" class="ai-model-select">
-              <option value="tencent-hy3">tencent-hy3</option>
-              <option value="mistral-medium-3-5">mistral-medium-3-5</option>
-              <option value="mistral-large">mistral-large</option>
-              <option value="glm-5.2-free">glm-5.2-free</option>
-              <option value="agnes-2.0-flash">agnes-2.0-flash</option>
-            </select>
+            <button id="aiModelBtn" class="icon-btn" title="Change model" style="font-size:12px;max-width:100px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">tencent-hy3</button>
             <button id="aiClearBtn" class="icon-btn" title="Clear"><i class="fa-solid fa-trash"></i></button>
             <button id="aiWakeBtn" class="icon-btn" title="Hey Agora"><i class="fa-solid fa-ear-listen"></i></button>
+            <button id="aiLangBtn" class="icon-btn" title="Language" style="font-size:13px;font-weight:700">বাং</button>
           </div>
           <div id="aiMessages" class="messages"></div>
           <!-- Assistant glow bar -->
@@ -152,6 +149,8 @@
           </div>
           <div class="settings-group">
             <div class="settings-item" id="setNameBtn"><i class="fa-solid fa-user"></i><span>Edit profile name</span></div>
+            <div class="settings-item" id="setPointsBtn"><i class="fa-solid fa-coins"></i><span>Tokens: <b id="pointBalance">0</b></span><span class="set-val" id="earnTokensBtn" style="color:#00e676;cursor:pointer">+ Earn</span></div>
+            <div class="settings-item" id="setDailyBtn" style="display:none"><i class="fa-solid fa-gift"></i><span>Daily bonus</span><span class="set-val" style="color:#ffab00">Claim</span></div>
             <div class="settings-item" id="setThemeBtn"><i class="fa-solid fa-palette"></i><span>Theme</span><span class="set-val" id="themeVal">Dark</span></div>
             <div class="settings-item" id="setCallsBtn"><i class="fa-solid fa-phone"></i><span>Call history</span></div>
             <div class="settings-item" id="setAboutBtn"><i class="fa-solid fa-circle-info"></i><span>About AgoraMeet</span></div>
@@ -159,6 +158,24 @@
             <div class="settings-item danger" id="setLogoutBtn"><i class="fa-solid fa-right-from-bracket"></i><span>Log out</span></div>
           </div>
           <div class="settings-foot"><span id="appVersion">AgoraMeet v3.0.0</span></div>
+        </div>
+
+        <!-- Model Browser (OpenRouter) -->
+        <div id="modelBrowserView" class="view">
+          <div class="conv-header">
+            <button id="mbBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name">AI Models</div>
+            <button id="mbRefreshBtn" class="icon-btn" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
+          </div>
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="mbSearch" placeholder="Search models..."></div>
+          <div id="mbFilterBar" style="display:flex;gap:6px;padding:0 14px 6px;overflow-x:auto">
+            <button class="chip mb-filter active" data-filter="all">All</button>
+            <button class="chip mb-filter" data-filter="free">Free</button>
+            <button class="chip mb-filter" data-filter="large">Large (70B+)</button>
+            <button class="chip mb-filter" data-filter="small">Small</button>
+          </div>
+          <div id="mbList" class="chat-list" style="padding:4px 0"></div>
+          <div id="mbLoading" class="empty-state"><div class="spinner"></div><p style="margin-top:12px">Loading models...</p></div>
         </div>
 
         <!-- Conversation -->
@@ -171,6 +188,7 @@
               <div class="conv-status" id="convStatus">online</div>
             </div>
             <div class="conv-actions">
+              <button id="grpInfoBtn" title="Group info" class="hidden"><i class="fa-solid fa-info-circle"></i></button>
               <button id="callVoiceBtn" title="Voice call"><i class="fa-solid fa-phone"></i></button>
               <button id="callVideoBtn" title="Video call"><i class="fa-solid fa-video"></i></button>
             </div>
@@ -180,6 +198,15 @@
               <div class="typing-dots"><span></span><span></span><span></span></div>
               typing…
             </div>
+          </div>
+          <!-- Reply bar -->
+          <div id="replyBar" class="reply-bar hidden">
+            <div class="reply-line"></div>
+            <div class="reply-body">
+              <span class="reply-name" id="replyName"></span>
+              <span class="reply-text" id="replyText"></span>
+            </div>
+            <button id="replyCloseBtn" class="composer-btn" style="flex-shrink:0"><i class="fa-solid fa-xmark"></i></button>
           </div>
           <div id="attachPreview" class="attach-preview hidden">
             <img id="attachPreviewImg" src="">
@@ -194,6 +221,48 @@
           </div>
           <input type="file" id="fileInput" accept="image/*" style="display:none">
           <div id="emojiPicker" class="emoji-picker hidden"></div>
+        </div>
+
+        <!-- Group info -->
+        <div id="grpInfoView" class="view">
+          <div class="conv-header">
+            <button id="grpInfoBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name">Group info</div>
+          </div>
+          <div id="grpInfoBody" class="chat-list" style="padding-top:8px">
+            <div class="settings-group">
+              <div class="settings-item" id="grpInfoName"><i class="fa-solid fa-users"></i><span id="grpInfoNameText">Group name</span></div>
+              <div class="settings-item" id="grpInfoDesc"><i class="fa-solid fa-align-left"></i><span id="grpInfoDescText">Group description</span></div>
+            </div>
+            <div style="padding:12px 16px;color:var(--muted);font-size:13px;font-weight:600">Members (<span id="grpMemberCount">0</span>)</div>
+            <div id="grpMemberList"></div>
+            <button id="grpLeaveBtn" class="btn-danger" style="margin:20px 14px;width:calc(100% - 28px)">Leave group</button>
+          </div>
+        </div>
+
+        <!-- Forward message -->
+        <div id="forwardView" class="view">
+          <div class="conv-header">
+            <button id="fwBackBtn"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="conv-name">Forward message</div>
+          </div>
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="fwSearchInput" placeholder="Search chats"></div>
+          <div id="fwChatList" class="chat-list"></div>
+        </div>
+
+        <!-- Status viewer (full screen) -->
+        <div id="statusViewer" class="view" style="background:#000">
+          <div class="conv-header" style="position:absolute;top:0;left:0;right:0;z-index:10;background:linear-gradient(#000,transparent);border:none">
+            <button id="statusViewerBack"><i class="fa-solid fa-arrow-left" style="color:#fff"></i></button>
+            <div class="conv-name" id="statusViewerName" style="color:#fff">Status</div>
+          </div>
+          <div id="statusViewerContent" style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px">
+            <div id="statusViewerText" style="color:#fff;font-size:22px;text-align:center;line-height:1.5"></div>
+          </div>
+          <div class="composer" style="position:absolute;bottom:20px;left:0;right:0;background:transparent">
+            <input id="statusReplyInput" placeholder="Reply to status…" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">
+            <button id="statusReplyBtn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
         </div>
 
         <!-- Group create -->

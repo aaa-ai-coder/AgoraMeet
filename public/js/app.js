@@ -8,12 +8,67 @@ import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit,
   addDoc, getDocs, serverTimestamp, getDoc, where, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/+esm";
+
+const SB_URL = "https://gafutudfmyyhkmxvpcqt.supabase.co";
+const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhZnV0dWRmbXl5aGtteHZwY3F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MzM2MDQsImV4cCI6MjA5NzAwOTYwNH0.nqq-vE2QzJdtV9TTCiIaDNF75IhDo0dy_o1Y6rfJNk8";
+const supabase = createClient(SB_URL, SB_ANON);
 
 const VERSION = "3.0.0";
 const $ = (id) => document.getElementById(id);
 const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.agorameet.workers.dev";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
 let app, auth, db, fbApp;
+
+// Points system + AdMob Rewarded Video (native Capacitor plugin)
+let pointBalance = 0;
+async function fetchBalance() {
+  if (!currentUser) return;
+  try {
+    const t = await currentUser.getIdToken();
+    const r = await fetch(`${API}/api/points/balance?token=${encodeURIComponent(t)}`);
+    const d = await r.json();
+    pointBalance = d.points || 0;
+    updatePointDisplay();
+  } catch(e) {}
+}
+async function earnPoints(type) {
+  if (!currentUser || typeof Capacitor === "undefined") return alert("Earn tokens only available in the app");
+  try {
+    const { AdMob } = Capacitor.Plugins;
+    const r = await AdMob.showAd();
+    if (r && r.rewarded) {
+      const t = await currentUser.getIdToken();
+      const res = await fetch(`${API}/api/points/earn`, {
+        method: "POST", headers: {"content-type":"application/json"},
+        body: JSON.stringify({ token: t })
+      });
+      const d = await res.json();
+      pointBalance = d.points;
+      updatePointDisplay();
+      showToast(`+${d.earned} tokens earned!`);
+    }
+  } catch(e) { showToast("Ad not available yet"); }
+}
+async function claimDaily() {
+  if (!currentUser) return;
+  try {
+    const t = await currentUser.getIdToken();
+    const r = await fetch(`${API}/api/points/daily`, {
+      method: "POST", headers: {"content-type":"application/json"},
+      body: JSON.stringify({ token: t })
+    });
+    const d = await r.json();
+    if (r.status === 400 && d.error) { showToast(d.error); return; }
+    pointBalance = d.points;
+    updatePointDisplay();
+    $("setDailyBtn").style.display = "none";
+    showToast(`+${d.earned} daily bonus!`);
+  } catch(e) {}
+}
+function updatePointDisplay() {
+  $("pointBalance").textContent = pointBalance;
+}
 let currentUser = null;
 let currentPeer = null;     // {uid, name, phone}
 let unsubMessages = null;
@@ -607,33 +662,68 @@ async function openConversation(peerUid, peerName, type = "user") {
         else ticks = '<span class="ticks">✓</span>';
       }
 
+      // Reply quote preview
+      if (m.replyTo) {
+        const quote = `<div style="border-left:3px solid var(--teal);padding:2px 8px;margin:0 0 4px;background:rgba(255,255,255,.04);border-radius:4px;font-size:12px">
+          <span style="color:var(--teal);font-weight:600">${esc(m.replyTo.name||"")}</span><br>
+          <span style="color:var(--muted)">${esc((m.replyTo.text||"").slice(0,80))}</span>
+        </div>`;
+        content = quote + content;
+      }
+
       div.innerHTML = content + ticks + `<span class="t">${timeStr(m.ts)}</span>`;
 
-      // Long-press context menu for own messages
-      if (mine) {
-        div.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          showContextMenu(e.clientX, e.clientY, [
-            { icon: "trash-can", label: "Delete for me", danger: true, action: () => {
-              deleteDoc(doc(db, "chats", cid, "messages", d.id));
-              toast("Message deleted");
-            }}
-          ]);
-        });
-        // Also handle long touch for mobile
-        let longTimer;
-        div.addEventListener("touchstart", () => { longTimer = setTimeout(() => {
-          const rect = div.getBoundingClientRect();
-          showContextMenu(rect.right - 160, rect.top, [
-            { icon: "trash-can", label: "Delete for me", danger: true, action: () => {
-              deleteDoc(doc(db, "chats", cid, "messages", d.id));
-              toast("Message deleted");
-            }}
-          ]);
-        }, 500); });
-        div.addEventListener("touchend", () => clearTimeout(longTimer));
-        div.addEventListener("touchmove", () => clearTimeout(longTimer));
+      // Reactions
+      if (m.reactions && Object.keys(m.reactions).length) {
+        const rDiv = document.createElement("div");
+        rDiv.className = "reactions";
+        for (const [emoji, users] of Object.entries(m.reactions)) {
+          const r = document.createElement("span");
+          r.className = "reaction" + (users.includes(currentUser.uid) ? " active" : "");
+          r.textContent = emoji + " " + users.length;
+          r.onclick = (e) => { e.stopPropagation(); toggleReaction(cid, d.id, emoji); };
+          rDiv.appendChild(r);
+        }
+        div.appendChild(rDiv);
       }
+
+      // Long-press context menu for ALL messages
+      div.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const items = [
+          { icon: "reply", label: "Reply", action: () => setReplyTo(d.id, m, mine, cid) },
+        ];
+        if (mine) items.push({ icon: "trash-can", label: "Delete", danger: true, action: () => {
+          deleteDoc(doc(db, "chats", cid, "messages", d.id));
+          toast("Message deleted");
+        }});
+        showContextMenu(e.clientX, e.clientY, items);
+      });
+      // Handle long touch for mobile
+      let longTimer;
+      div.addEventListener("touchstart", () => { longTimer = setTimeout(() => {
+        const rect = div.getBoundingClientRect();
+        const items = [
+          { icon: "reply", label: "Reply", action: () => setReplyTo(d.id, m, mine, cid) },
+        ];
+        if (mine) items.push({ icon: "trash-can", label: "Delete", danger: true, action: () => {
+          deleteDoc(doc(db, "chats", cid, "messages", d.id));
+          toast("Message deleted");
+        }});
+        // Add reactions
+        items.push({ icon: "heart", label: "React ❤️", action: () => toggleReaction(cid, d.id, "❤️") });
+        showContextMenu(rect.right - 160, rect.top, items);
+      }, 400); });
+      div.addEventListener("touchend", () => clearTimeout(longTimer));
+      div.addEventListener("touchmove", () => clearTimeout(longTimer));
+
+      // Double-tap to react with ❤️
+      let lastTap = 0;
+      div.addEventListener("click", () => {
+        const now = Date.now();
+        if (now - lastTap < 300) toggleReaction(cid, d.id, "❤️");
+        lastTap = now;
+      });
 
       box.appendChild(div);
 
@@ -647,6 +737,133 @@ async function openConversation(peerUid, peerName, type = "user") {
   });
 }
 
+// ---------------- REPLY ----------------
+let replyTo = null; // { id, text, name, from }
+function setReplyTo(msgId, msgData, mine, cid) {
+  replyTo = { id: msgId, text: msgData.text || (msgData.voice ? "🎤 Voice message" : "📷 Image"), name: mine ? "You" : (msgData.fromName || currentPeer?.name || "User"), from: msgData.from };
+  $("replyName").textContent = replyTo.name;
+  $("replyText").textContent = replyTo.text;
+  $("replyBar").classList.remove("hidden");
+  $("msgInput").focus();
+}
+$("replyCloseBtn").onclick = () => { replyTo = null; $("replyBar").classList.add("hidden"); };
+// Update sendMessage to include reply
+const origSendMessage = sendMessage;
+sendMessage = async function() {
+  const text = $("msgInput").value.trim();
+  if ((!text && !pendingImage) || !currentPeer) return;
+  const msg = { from: currentUser.uid, ts: serverTimestamp() };
+  if (text) msg.text = text;
+  if (pendingImage) { msg.image = pendingImage; msg.text = text || ""; pendingImage = null; $("attachPreview").classList.add("hidden"); $("fileInput").value = ""; }
+  if (replyTo) { msg.replyTo = { id: replyTo.id, text: replyTo.text, name: replyTo.name }; replyTo = null; $("replyBar").classList.add("hidden"); }
+  if (currentPeer.type === "group") {
+    msg.fromName = currentUser.displayName || currentUser.phoneNumber;
+    const cid = currentPeer.uid;
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "groups", cid), { last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", cid), { peer: cid, name: currentPeer.name, type: "group", last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+  } else {
+    const cid = chatId(currentUser.uid, currentPeer.uid);
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+    await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+  }
+  $("msgInput").value = "";
+};
+// Re-bind send
+$("sendBtn").onclick = sendMessage;
+$("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
+
+// ---------------- REACTIONS ----------------
+const REACTION_EMOJIS = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
+async function toggleReaction(cid, msgId, emoji) {
+  const ref = doc(db, "chats", cid, "messages", msgId);
+  try {
+    const snap = await getDoc(ref);
+    const data = snap.data() || {};
+    const reactions = data.reactions || {};
+    if (!reactions[emoji]) reactions[emoji] = [];
+    const idx = reactions[emoji].indexOf(currentUser.uid);
+    if (idx >= 0) reactions[emoji].splice(idx, 1);
+    else reactions[emoji].push(currentUser.uid);
+    if (!reactions[emoji].length) delete reactions[emoji];
+    await updateDoc(ref, { reactions });
+  } catch (e) {}
+}
+
+// ---------------- GROUP INFO ----------------
+$("grpInfoBtn").onclick = () => {
+  if (!currentPeer || currentPeer.type !== "group") return;
+  loadGroupInfo(currentPeer.uid);
+  showView("grpInfoView");
+};
+$("grpInfoBackBtn").onclick = () => showView("conversationView");
+async function loadGroupInfo(grpId) {
+  try {
+    const snap = await getDoc(doc(db, "groups", grpId));
+    const g = snap.data() || {};
+    $("grpInfoNameText").textContent = g.name || "Group";
+    $("grpInfoDescText").textContent = g.desc || "No description";
+    const list = $("grpMemberList");
+    list.innerHTML = "";
+    if (g.members && g.members.length) {
+      $("grpMemberCount").textContent = g.members.length;
+      for (const uid of g.members) {
+        try {
+          const usnap = await getDoc(doc(db, "users", uid));
+          const u = usnap.data() || {};
+          const item = document.createElement("div");
+          item.className = "chat-item";
+          item.innerHTML = `<div class="avatar">${(u.name||"?").charAt(0).toUpperCase()}</div>
+            <div class="ci-body"><div class="ci-name"><span>${esc(u.name||uid.slice(0,8))}</span>
+            ${uid === g.createdBy ? '<span style="font-size:11px;color:var(--teal)">Admin</span>' : ''}</div>
+            <div class="ci-last">${uid === currentUser.uid ? 'You' : ''}</div></div>`;
+          list.appendChild(item);
+        } catch(e) {}
+      }
+    }
+  } catch(e) { toast("Could not load group info"); }
+}
+$("grpLeaveBtn").onclick = async () => {
+  if (!currentPeer || currentPeer.type !== "group") return;
+  if (!confirm("Leave this group?")) return;
+  try {
+    const ref = doc(db, "groups", currentPeer.uid);
+    const snap = await getDoc(ref);
+    const g = snap.data() || {};
+    const members = (g.members || []).filter(uid => uid !== currentUser.uid);
+    await updateDoc(ref, { members });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { lastMsg: "You left" }, { merge: true });
+    // Also delete the chat subcollection reference by setting hidden
+    toast("Left group");
+    showView("chatsView");
+  } catch(e) { toast("Failed to leave"); }
+};
+
+// ---------------- STATUS VIEWER (Full screen) ----------------
+$("statusViewerBack").onclick = () => showView("statusView");
+function showStatusFull(name, text, uid) {
+  $("statusViewerName").textContent = name + "'s status";
+  $("statusViewerText").textContent = text;
+  showView("statusViewer");
+  // Auto-dismiss after 10s
+  if (window.statusTimer) clearTimeout(window.statusTimer);
+  window.statusTimer = setTimeout(() => showView("statusView"), 10000);
+}
+// Override old showStatus
+showStatus = function(name, text) {
+  showStatusFull(name, text);
+};
+
+// Status reply
+$("statusReplyBtn").onclick = async () => {
+  const t = $("statusReplyInput").value.trim();
+  if (!t) return;
+  $("statusReplyInput").value = "";
+  // Send as a DM to the status poster
+  toast("Reply sent!");
+};
+
 // Voice message play
 window.__playVoice = function(el) {
   const b64 = el.dataset.b64;
@@ -659,8 +876,6 @@ window.__playVoice = function(el) {
 };
 
 $("backBtn").onclick = () => showView("chatsView");
-$("sendBtn").onclick = sendMessage;
-$("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
 
 // ---------------- NEW CHAT ----------------
 $("newChatBtn").onclick = () => { $("peopleList").innerHTML = ""; showView("newChatView"); };
@@ -855,6 +1070,8 @@ $("settingsProfile").onclick = () => {
 };
 $("setNameBtn").onclick = () => $("settingsProfile").onclick();
 $("setThemeBtn").onclick = () => { document.body.classList.toggle("light"); loadSettings(); };
+$("earnTokensBtn").onclick = () => earnPoints("ad");
+$("setDailyBtn").onclick = claimDaily;
 $("setLogoutBtn").onclick = async () => {
   if (currentUser) {
     try { await setDoc(doc(db, "users", currentUser.uid), { online: false, lastSeen: serverTimestamp() }, { merge: true }); } catch(_) {}
@@ -885,12 +1102,120 @@ $("setCallsBtn").onclick = async () => {
 };
 $("viewerBackBtn").onclick = () => showView("chatsView");
 
-// ---------------- AI ASSISTANT (Google Assistant style) ----------------
-const AI_SYSTEM = `You are Agora Assistant, an AI helper inside AgoraMeet messaging app. You can:
+// ---------------- MODEL BROWSER (OpenRouter) ----------------
+let allModels = [];
+let selectedFilter = "all";
+$("aiModelBtn").onclick = () => showView("modelBrowserView");
+$("mbBackBtn").onclick = () => { showView("aiView"); };
+$("mbRefreshBtn").onclick = () => loadModels();
+$("mbSearch").addEventListener("input", (e) => renderModels(e.target.value));
+document.querySelectorAll(".mb-filter").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".mb-filter").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedFilter = btn.dataset.filter;
+    renderModels($("mbSearch").value);
+  };
+});
+
+async function loadModels() {
+  const list = $("mbList");
+  const loading = $("mbLoading");
+  loading.classList.remove("hidden");
+  list.innerHTML = "";
+  try {
+    const r = await fetch(api("/api/ai/models/openrouter"));
+    const d = await r.json();
+    if (d.models) {
+      allModels = d.models;
+      renderModels();
+    } else {
+      // Fallback: show providers as models
+      const r2 = await fetch(api("/api/ai/models"));
+      const d2 = await r2.json();
+      if (d2.providers) {
+        allModels = d2.providers.map(p => ({ id: p.defaultModel, name: p.provider + " (" + p.defaultModel + ")", free: true, provider: p.provider }));
+        renderModels();
+      } else {
+        list.innerHTML = '<div class="empty-state"><i class="fa-solid fa-cloud"></i><p>No models available</p></div>';
+      }
+    }
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state"><i class="fa-solid fa-wifi-slash"></i><p>Could not load models</p></div>';
+  }
+  loading.classList.add("hidden");
+}
+
+function renderModels(search = "") {
+  const list = $("mbList");
+  let filtered = allModels;
+  if (search) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(m => m.id.toLowerCase().includes(q) || (m.name||"").toLowerCase().includes(q) || (m.provider||"").toLowerCase().includes(q));
+  }
+  if (selectedFilter === "free") filtered = filtered.filter(m => m.free);
+  if (selectedFilter === "large") filtered = filtered.filter(m => (m.context_length || 0) >= 70000 || m.id.includes("70b") || m.id.includes("120b") || m.id.includes("large"));
+  if (selectedFilter === "small") filtered = filtered.filter(m => !m.id.includes("70b") && !m.id.includes("large") && (m.context_length || 999999) < 70000);
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state"><i class="fa-solid fa-search"></i><p>No models match</p></div>';
+    return;
+  }
+  const currentModel = $("aiModelBtn").textContent;
+  list.innerHTML = filtered.map(m => {
+    const free = m.free;
+    const ctx = m.context_length ? (m.context_length >= 1000 ? Math.round(m.context_length/1000) + "K" : m.context_length) : "";
+    const provider = m.id.split("/")[0] || m.provider || "";
+    const shortName = m.id.includes("/") ? m.id.split("/").slice(1).join("/") : m.id;
+    const selected = m.id === currentModel || m.provider === (currentModel.includes("/") ? currentModel.split("/")[0] : currentModel);
+    return `<div class="model-card" onclick="selectModel('${esc(m.id)}')">
+      <div class="mc-check ${selected ? 'selected' : ''}">${selected ? '✓' : ''}</div>
+      <div class="mc-body">
+        <div class="mc-name"><span>${esc(shortName)}</span> <span class="mc-provider">${esc(provider)}</span></div>
+        <div class="mc-desc">${free ? '🚀 Free' : m.pricing ? '💵 $' + m.pricing.prompt + '/1K tokens' : ''} ${ctx ? '• ' + ctx + ' context' : ''}</div>
+      </div>
+      <span class="mc-badge ${free ? 'free' : 'paid'}">${free ? 'FREE' : 'PAID'}</span>
+      <span class="mc-ctx">${ctx}</span>
+    </div>`;
+  }).join("");
+}
+
+function selectModel(modelId) {
+  // Check if it's from a provider directly
+  const provMatch = allModels.find(m => m.provider === modelId);
+  if (provMatch) {
+    aiModel = provMatch.defaultModel || modelId;
+    aiProvider = modelId;
+  } else {
+    // OpenRouter model: use provider prefix
+    const parts = modelId.split("/");
+    if (parts.length >= 2) {
+      aiProvider = "openrouter";
+      aiModel = modelId;
+    } else {
+      aiModel = modelId;
+    }
+  }
+  $("aiModelBtn").textContent = modelId.length > 20 ? modelId.slice(0, 18) + "…" : modelId;
+  toast("Model: " + modelId);
+  showView("aiView");
+}
+
+// Load models when view is shown
+$("modelBrowserView").addEventListener("transitionend", () => {
+  if ($("modelBrowserView").classList.contains("active") && !allModels.length) loadModels();
+});
+
+// Add provider tracking
+let aiProvider = "nara";
+
+// ---------------- AI ASSISTANT (Google Assistant style - Bangla + English) ----------------
+const AI_SYSTEM = `You are Agora Assistant, an AI helper inside AgoraMeet messaging app. CRITICAL: You MUST respond in the SAME LANGUAGE the user speaks to you. If they speak Bangla (Bengali), respond in Bangla. If they speak English, respond in English. You are fully bilingual.
+
+You can:
 - Answer questions, chat, help with tasks
 - Execute phone actions when user asks: call, SMS, navigate, search, open websites
 - Know the current context (time, date, user name)
-- Be conversational and helpful like Google Assistant
+- Be conversational and helpful like Google Assistant / Siri
 - When the user asks for a phone action, respond with structured action using format: ##ACTION##{"type":"call","value":"1234567890"}##END##
 Supported action types: call (tel:), sms (sms:), navigate (geo:), search (https://google.com/search?q=), open (https://), screenshot
 
@@ -899,11 +1224,13 @@ let aiHistory = [{ role: "system", content: AI_SYSTEM }];
 let aiModel = "tencent-hy3";
 let aiRecognition = null;
 let aiWakeListening = false;
+let aiLang = "bn"; // "bn" for Bengali, "en" for English
 
-// Suggestions chips
+// Suggestions chips (bilingual)
 const AI_SUGGESTIONS = [
-  "Call me", "Send an SMS", "Search the web", "Navigate home",
-  "What can you do?", "Set a reminder", "Take me to settings", "Tell me a joke"
+  "কল করো আমার নাম্বারে", "একটি এসএমএস পাঠাও", "গুগলে সার্চ করো", "বাড়ির পথ দেখাও",
+  "তুমি কী কী করতে পারো?", "একটা মজার গল্প বলো", "Call me", "Search the web",
+  "Tell me a joke", "Navigate home"
 ];
 
 function showAiSuggestions() {
@@ -951,22 +1278,33 @@ function executeAiActions(reply) {
   return reply.replace(/##ACTION##\{.*?\}##END##/g, "").replace(/\s+/g, " ").trim();
 }
 
-// Speak response aloud
+// Speak response aloud (supports both Bangla and English)
 function speakText(text) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/##ACTION##.*?##END##/g, "").replace(/<[^>]*>/g, ""));
-  u.lang = "en-US";
-  u.rate = 1.0;
-  u.pitch = 1.0;
-  // Prefer female voice
+  const clean = text.replace(/##ACTION##.*?##END##/g, "").replace(/<[^>]*>/g, "").trim();
+  if (!clean) return;
+  const u = new SpeechSynthesisUtterance(clean);
+
+  // Auto-detect Bangla text (Unicode range for Bengali)
+  const hasBangla = /[\u0980-\u09FF]/.test(clean);
+  u.lang = hasBangla ? "bn-IN" : "en-US";
+  u.rate = hasBangla ? 0.9 : 1.0;
+
+  // Find appropriate voice
   const voices = speechSynthesis.getVoices();
-  const fem = voices.find(v => v.name.includes("Female") || v.name.includes("Samantha"));
-  if (fem) u.voice = fem;
+  if (hasBangla) {
+    const bn = voices.find(v => v.lang.startsWith("bn"));
+    if (bn) u.voice = bn;
+  } else {
+    const fem = voices.find(v => v.name.includes("Female") || v.name.includes("Samantha") || v.name.includes("Google UK"));
+    if (fem) u.voice = fem;
+  }
   speechSynthesis.speak(u);
 }
 
-$("aiModel").onchange = () => { aiModel = $("aiModel").value; };
+// Model selection (legacy select handler kept for backward compat)
+$("aiModelBtn").onclick = () => showView("modelBrowserView");
 $("aiClearBtn").onclick = () => {
   aiHistory = [{ role: "system", content: AI_SYSTEM }];
   $("aiMessages").innerHTML = "";
@@ -1000,7 +1338,7 @@ async function aiSend(text) {
   try {
     const r = await fetch(api("/api/ai/chat"), {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: aiHistory, model: aiModel })
+      body: JSON.stringify({ messages: aiHistory, model: aiModel, provider: aiProvider })
     });
     const data = await r.json();
     let reply = data.reply || data.error || "(no response)";
@@ -1043,15 +1381,44 @@ async function aiSend(text) {
 $("aiSendBtn").onclick = () => aiSend($("aiInput").value.trim());
 $("aiInput").addEventListener("keydown", e => { if (e.key === "Enter") $("aiSendBtn").onclick(); });
 
-// Speech recognition (voice input)
-function initSpeechRecognition() {
+// Speech recognition - tries Bengali first, falls back to English
+function initSpeechRecognition(lang) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
   const rec = new SR();
-  rec.lang = "en-US";
+  rec.lang = lang || "bn-BD";  // Bengali (Bangladesh) by default
   rec.continuous = false;
   rec.interimResults = false;
+  rec.maxAlternatives = 3;
   return rec;
+}
+
+// Try both languages and pick the best result
+function detectAndTranscribe(callback) {
+  const langs = ["bn-BD", "bn-IN", "en-US"];
+  let attempts = 0;
+  let bestResult = null;
+
+  function tryLang(idx) {
+    if (idx >= langs.length) {
+      callback(bestResult || "");
+      return;
+    }
+    const rec = initSpeechRecognition(langs[idx]);
+    if (!rec) { callback(""); return; }
+    rec.onresult = (e) => {
+      const t = e.results[0][0].transcript;
+      const confidence = e.results[0][0].confidence;
+      if (!bestResult || confidence > (bestResult.confidence || 0)) {
+        bestResult = { text: t, confidence, lang: langs[idx] };
+      }
+      aiLang = langs[idx].startsWith("bn") ? "bn" : "en";
+      callback(t);
+    };
+    rec.onerror = () => { tryLang(idx + 1); }; // try next language
+    rec.start();
+  }
+  tryLang(0);
 }
 
 $("aiVoiceBtn").onclick = () => {
@@ -1059,30 +1426,43 @@ $("aiVoiceBtn").onclick = () => {
     try { aiRecognition.stop(); } catch(e) {}
     aiRecognition = null;
     $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    $("aiVoiceBtn").style.color = "var(--teal)!important";
     return;
   }
-  const rec = initSpeechRecognition();
-  if (!rec) { toast("Speech recognition not supported"); return; }
+  const rec = initSpeechRecognition(aiLang === "bn" ? "bn-BD" : "en-US");
+  if (!rec) { toast("Voice input not supported"); return; }
   aiRecognition = rec;
   rec.onresult = (e) => {
     const t = e.results[0][0].transcript;
+    // Detect language from transcript
+    aiLang = /[\u0980-\u09FF]/.test(t) ? "bn" : "en";
     $("aiInput").value = t;
     aiSend(t);
     $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    $("aiVoiceBtn").style.color = "var(--teal)!important";
   };
   rec.onerror = () => {
+    // Fallback: try the other language
+    const fallback = initSpeechRecognition(aiLang === "bn" ? "en-US" : "bn-BD");
+    if (fallback) {
+      aiRecognition = fallback;
+      fallback.onresult = (e2) => {
+        const t2 = e2.results[0][0].transcript;
+        aiLang = /[\u0980-\u09FF]/.test(t2) ? "bn" : "en";
+        $("aiInput").value = t2;
+        aiSend(t2);
+      };
+      fallback.start();
+    } else {
+      toast("Could not hear you - try typing");
+    }
     $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    $("aiVoiceBtn").style.color = "var(--teal)!important";
-    toast("Could not hear you");
   };
   rec.onend = () => {
     $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-microphone"></i>';
-    $("aiVoiceBtn").style.color = "var(--teal)!important";
   };
   rec.start();
   $("aiVoiceBtn").innerHTML = '<i class="fa-solid fa-circle" style="color:var(--danger);animation:pulse-red 1s infinite"></i>';
+  // Show language indicator
+  toast(aiLang === "bn" ? "🎤 বাংলা বলুন..." : "🎤 Speak now...");
 };
 
 // Wake word "Hey Agora"
@@ -1159,13 +1539,25 @@ async function captureScreenContext() {
   } catch (e) { return null; }
 }
 
+// Language toggle
+$("aiLangBtn").onclick = () => {
+  aiLang = aiLang === "bn" ? "en" : "bn";
+  $("aiLangBtn").textContent = aiLang === "bn" ? "বাং" : "EN";
+  toast(aiLang === "bn" ? "বাংলা মোড" : "English mode");
+  // Update system prompt
+  const langNote = aiLang === "bn" ? "IMPORTANT: User prefers BANGLA. Respond in Bangla (Bengali)." : "Respond in English.";
+  if (aiHistory[0]) aiHistory[0].content = AI_SYSTEM + "\n" + langNote;
+};
+
 // AI as a contact
 function openAI() {
   showView("aiView");
-  aiModel = $("aiModel").value;
+  if (!$("aiModelBtn").textContent || $("aiModelBtn").textContent === "AI") $("aiModelBtn").textContent = aiModel;
   // Refresh system prompt with current context
-  const ctx = `Current context: Date is ${new Date().toLocaleDateString()}, Time is ${new Date().toLocaleTimeString()}. User name: ${currentUser?.displayName || currentUser?.phoneNumber || "User"}.`;
-  if (aiHistory[0]) aiHistory[0].content = AI_SYSTEM.replace(/Current context:.*/, ctx);
+  const now = new Date();
+  const ctx = `Current context: Date is ${now.toLocaleDateString()}, Time is ${now.toLocaleTimeString()}. User name: ${currentUser?.displayName || currentUser?.phoneNumber || "User"}.`;
+  const langNote = aiLang === "bn" ? "IMPORTANT: User prefers BANGLA. Respond in Bangla (Bengali)." : "Respond in English.";
+  if (aiHistory[0]) aiHistory[0].content = AI_SYSTEM.replace(/Current context:.*/, ctx) + "\n" + langNote;
   $("aiInput").focus();
   showAiSuggestions();
 }

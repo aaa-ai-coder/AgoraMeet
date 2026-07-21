@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        AdMobManager.getInstance().init(this);
         for (String p : PERMS) {
             if (ContextCompat.checkSelfPermission(this, p) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, PERMS, 1);

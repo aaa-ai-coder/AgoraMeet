@@ -1,7 +1,28 @@
 // AgoraMeet backend — Cloudflare Worker (replaces the old Render Express server).
 // Native Worker: no Express, no firebase-admin. Firebase is reached via REST + Web Crypto (jose).
-import { RtcTokenBuilder, RtcRole } from "agora-token";
 import { SignJWT, importPKCS8, importX509, jwtVerify } from "jose";
+
+// Minimal Agora RTC token builder for Cloudflare Workers (no node:crypto dependency).
+async function buildTokenWithUid(appId, cert, channel, uid, role, ts, salt) {
+  const enc = new TextEncoder();
+  const b64 = (buf) => {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  };
+  const header = b64(enc.encode(JSON.stringify({ typ: "JWT", alg: "HMAC-SHA256", no_meta: true })));
+  const claim = b64(enc.encode(JSON.stringify({
+    uid, channel, app_id: appId, role, ts, salt, expire: ts,
+    service: "rtc",
+    privileges: { "rtc/join_channel": ts, "rtc/publish_audio": ts, "rtc/publish_video": ts }
+  })));
+  const key = await crypto.subtle.importKey("raw", enc.encode(cert), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(header + "." + claim));
+  return header + "." + claim + "." + b64(sig);
+}
+const RtcRole = { PUBLISHER: 1, SUBSCRIBER: 2 };
+const RtcTokenBuilder = { buildTokenWithUid };
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -259,7 +280,7 @@ export default {
         let uid = parseInt(url.searchParams.get("uid") || "0", 10);
         if (isNaN(uid)) uid = 0;
         const exp = Math.floor(Date.now() / 1000) + 3600;
-        const token = RtcTokenBuilder.buildTokenWithUid(
+        const token = await RtcTokenBuilder.buildTokenWithUid(
           env.AGORA_APP_ID, env.AGORA_CERTIFICATE, channel, uid, RtcRole.PUBLISHER, exp, exp
         );
         return json({ token, appId: env.AGORA_APP_ID, uid, channel });
@@ -333,14 +354,108 @@ export default {
         siliconflow: { url: "https://api.siliconflow.com/v1/chat/completions", key: env.SILICONFLOW_API_KEY, def: "deepseek-ai/DeepSeek-V3" },
         arcee: { url: "https://conductor.arcee.ai/v1/chat/completions", key: env.ARCEE_API_KEY, def: "arcee-ai/arcee-blitz" },
         cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: env.CEREBRAS_API_KEY, def: "llama-3.3-70b" },
+        openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", key: env.OPENROUTER_API_KEY, def: "openai/gpt-4o-mini" },
+        gemini: { url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + env.GEMINI_0, key: env.GEMINI_0 ? "yes" : "", def: "gemini-2.0-flash" },
+        // Felix-RDX free AI models (always available, no API key needed)
+        "felix-llama": { url: "https://felix-rdx", key: "free", def: "llama-meta" },
+        "felix-gpt5": { url: "https://felix-rdx", key: "free", def: "gpt-5" },
+        "felix-deepseek": { url: "https://felix-rdx", key: "free", def: "deepseek-v3" },
+        "felix-gemini": { url: "https://felix-rdx", key: "free", def: "gemini" },
+        "felix-cohere": { url: "https://felix-rdx", key: "free", def: "cohere" },
+        "felix-qwen": { url: "https://felix-rdx", key: "free", def: "qwen" },
+        "felix-gpt3": { url: "https://felix-rdx", key: "free", def: "gpt3" },
       };
+      // Gemini uses a different API format, handle separately
+      async function geminiChat(messages, model) {
+        const apiKey = [env.GEMINI_0, env.GEMINI_1, env.GEMINI_2, env.GEMINI_3, env.GEMINI_4].find(k => k);
+        if (!apiKey) return null;
+        const sysMsg = messages.find(m => m.role === "system")?.content || "";
+        const userMsgs = messages.filter(m => m.role !== "system").map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+        if (sysMsg) userMsgs.unshift({ role: "user", parts: [{ text: "System: " + sysMsg }] });
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-2.0-flash"}:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contents: userMsgs, generationConfig: { temperature: 0.7 } })
+        });
+        const d = await r.json();
+        if (!r.ok) return { error: d.error?.message || "gemini error" };
+        return { reply: d.candidates?.[0]?.content?.parts?.[0]?.text || "" };
+      }
       if (p === "/api/ai/models") {
         const list = Object.entries(AI_PROVIDERS).filter(([, v]) => v.key).map(([k, v]) => ({ provider: k, defaultModel: v.def }));
+        // Add felix free models
+        const felixModels = ["llama-meta","deep-ai","gpt-5","copilot","gptlogic","deepseek-r1","deepseek-v3","cohere","bible-ai","qwen","gpt3","gemini"];
+        felixModels.forEach(m => { if (!list.find(x => x.defaultModel === m)) list.push({ provider: "felix-" + m, defaultModel: m, free: true }); });
         return json({ providers: list, available: list.length > 0 });
       }
+      // OpenRouter model list
+      if (p === "/api/ai/models/openrouter" && env.OPENROUTER_API_KEY) {
+        const r = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` }
+        });
+        const d = await r.json();
+        if (!r.ok) return json({ error: d.error?.message || "failed" }, r.status);
+        // Tag free models
+        const models = (d.data || []).map(m => ({
+          id: m.id, name: m.name || m.id, created: m.created,
+          pricing: m.pricing, context_length: m.context_length || 0,
+          free: m.pricing && parseFloat(m.pricing.prompt) === 0 && parseFloat(m.pricing.completion) === 0,
+          description: m.description ? m.description.slice(0, 200) : ""
+        }));
+        return json({ models, total: models.length });
+      }
+      // Felix free models list
+      if (p === "/api/ai/models/felix") {
+        const FELIX_MODELS = [
+          { id: "llama-meta", name: "Llama Meta", free: true, context_length: 8192, description: "Meta's Llama model via free API" },
+          { id: "deep-ai", name: "Deep AI", free: true, context_length: 4096, description: "Deep AI chat model" },
+          { id: "gpt-5", name: "GPT-5", free: true, context_length: 8192, description: "GPT-5 via free API" },
+          { id: "copilot", name: "Copilot", free: true, context_length: 4096, description: "Microsoft Copilot via free API" },
+          { id: "gptlogic", name: "GPT Logic", free: true, context_length: 4096, description: "GPT Logic reasoning model" },
+          { id: "deepseek-r1", name: "DeepSeek R1", free: true, context_length: 8192, description: "DeepSeek R1 reasoning model" },
+          { id: "deepseek-v3", name: "DeepSeek V3", free: true, context_length: 8192, description: "DeepSeek V3 chat model" },
+          { id: "cohere", name: "Cohere", free: true, context_length: 4096, description: "Cohere command model" },
+          { id: "bible-ai", name: "Bible AI", free: true, context_length: 4096, description: "Bible-focused AI assistant" },
+          { id: "qwen", name: "Qwen", free: true, context_length: 8192, description: "Alibaba Qwen model" },
+          { id: "gpt3", name: "GPT-3", free: true, context_length: 4096, description: "GPT-3 via free API" },
+          { id: "gemini", name: "Gemini", free: true, context_length: 8192, description: "Google Gemini via free API" },
+        ];
+        return json({ models: FELIX_MODELS, total: FELIX_MODELS.length });
+      }
       if (p === "/api/ai/chat" && request.method === "POST") {
-        const { messages, model, provider } = await request.json().catch(() => ({}));
+        const { messages, model, provider, token } = await request.json().catch(() => ({}));
         if (!Array.isArray(messages) || !messages.length) return json({ error: "messages required" }, 400);
+        // Points system — if auth token provided, deduct points
+        let uid = null;
+        if (token && env.FB_SERVICE_ACCOUNT) {
+          let payload;
+          try { payload = await verifyIdToken(env, token); }
+          catch { return json({ error: "auth failed" }, 401); }
+          uid = payload.uid;
+          const doc = await getUserDoc(env, uid);
+          const provKey = provider ? provider.replace(/^felix-/, "") : "";
+          const cost = POINT_COSTS[provKey] || (provKey.startsWith("felix") ? 1 : POINT_COSTS.default);
+          if ((doc.points || 0) < cost) return json({ error: "insufficient_points", points: doc.points || 0, cost }, 402);
+          const pts = (doc.points || 0) - cost;
+          await updatePoints(env, uid, pts);
+        }
+        // Gemini special handling
+        if (provider === "gemini" || (model && model.startsWith("gemini"))) {
+          const gem = await geminiChat(messages, model);
+          if (gem && gem.reply) return json({ reply: gem.reply, provider: "gemini" });
+          if (gem && gem.error) return json({ error: gem.error }, 500);
+        }
+        // Route felix models to the custom proxy
+        if (provider?.startsWith("felix-") || model?.startsWith("felix-")) {
+          const fm = model || "llama-meta";
+          const r = await fetch(url.origin + "/api/felix/chat", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ messages, model: fm.replace("felix-", "") })
+          });
+          const d = await r.json();
+          if (d.reply) return json({ reply: d.reply, provider: "felix-" + fm });
+          return json({ error: d.error || "felix ai error" }, 500);
+        }
         const prov = AI_PROVIDERS[provider] || AI_PROVIDERS.nara;
         if (!prov || !prov.key) return json({ error: "ai provider not configured" }, 503);
         const r = await fetch(prov.url, {
@@ -358,6 +473,90 @@ export default {
         const { room, identity, name } = await request.json().catch(() => ({}));
         const rk = await livekitToken(env, room || "ai-voice", identity || "user", name || "User");
         return json({ token: rk, url: env.LIVEKIT_URL, room: room || "ai-voice" });
+      }
+
+      // Supabase REST helpers
+      const SB_URL = "https://gafutudfmyyhkmxvpcqt.supabase.co";
+      const SB_KEY = env.SUPABASE_SERVICE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhZnV0dWRmbXl5aGtteHZwY3F0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTQzMzYwNCwiZXhwIjoyMDk3MDA5NjA0fQ.ZH98qwkEbW2FWUgvtEaSTWFlnQkzYKJQxq67MLbI5I4";
+      const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhZnV0dWRmbXl5aGtteHZwY3F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MzM2MDQsImV4cCI6MjA5NzAwOTYwNH0.nqq-vE2QzJdtV9TTCiIaDNF75IhDo0dy_o1Y6rfJNk8";
+      async function sbQuery(env, table, params) {
+        const qs = params ? "?" + new URLSearchParams(params) : "";
+        const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`, {
+          headers: { apikey: SB_ANON, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY || SB_KEY}` }
+        });
+        return r.json();
+      }
+      async function sbUpsert(env, table, data) {
+        const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+          method: "POST", headers: { "content-type": "application/json", apikey: SB_ANON, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY || SB_KEY}`, Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify(data)
+        });
+        return r.ok;
+      }
+      async function sbPatch(env, table, idField, idValue, data) {
+        const r = await fetch(`${SB_URL}/rest/v1/${table}?${idField}=eq.${idValue}`, {
+          method: "PATCH", headers: { "content-type": "application/json", apikey: SB_ANON, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY || SB_KEY}` },
+          body: JSON.stringify(data)
+        });
+        return r.ok;
+      }
+
+      // Points system — users earn points by watching ads, spend on AI
+      const POINT_COSTS = { felix: 1, gemini: 2, groq: 2, mistral: 3, openrouter: 3, nara: 1, siliconflow: 2, arcee: 2, cerebras: 2, default: 5 };
+      const IMAGE_COST = 50; const DEFAULT_IMAGE_COST = 30;
+      const AD_REWARD = 200; const DAILY_BONUS = 10;
+      async function getUserDoc(env, uid) {
+        // Try Supabase first, fallback to Firestore
+        try {
+          const rows = await sbQuery(env, "users", { select: "*", uid: `eq.${uid}`, limit: "1" });
+          if (rows && rows.length > 0) return rows[0];
+        } catch(e) {}
+        let doc = await fsGet(env, `/users/${uid}`);
+        if (!doc) {
+          const at = await getAccessToken(env);
+          await fetch(FS(env, `/users/${uid}`), {
+            method: "PATCH", headers: { Authorization: `Bearer ${at}`, "content-type": "application/json" },
+            body: JSON.stringify({ fields: toFs({ points: 0, totalEarned: 0, lastDaily: 0, createdAt: new Date() }) }),
+          });
+          doc = { points: 0, totalEarned: 0, lastDaily: 0 };
+        }
+        return doc;
+      }
+      async function updatePoints(env, uid, pts, totalEarned) {
+        try { await sbUpsert(env, "users", { uid, points: pts, totalEarned: totalEarned || 0, updatedAt: new Date().toISOString() }); } catch(e) {}
+        try { await fsPatch(env, `/users/${uid}`, { points: pts, totalEarned: totalEarned || 0 }, ["points", "totalEarned"]); } catch(e) {}
+      }
+      if (p === "/api/points/balance" && request.method === "GET") {
+        try {
+          const { uid } = await verifyIdToken(env, url.searchParams.get("token"));
+          const doc = await getUserDoc(env, uid);
+          return json({ points: doc.points || 0, totalEarned: doc.totalEarned || 0 });
+        } catch (e) { return json({ error: "auth failed" }, 401); }
+      }
+      if (p === "/api/points/earn" && request.method === "POST") {
+        try {
+          const { uid } = await verifyIdToken(env, (await request.json()).token);
+          const doc = await getUserDoc(env, uid);
+          const pts = (doc.points || 0) + AD_REWARD;
+          await updatePoints(env, uid, pts, (doc.totalEarned || 0) + AD_REWARD);
+          return json({ points: pts, earned: AD_REWARD });
+        } catch (e) { return json({ error: "auth failed" }, 401); }
+      }
+      if (p === "/api/points/daily" && request.method === "POST") {
+        try {
+          const { uid } = await verifyIdToken(env, (await request.json()).token);
+          const doc = await getUserDoc(env, uid);
+          const now = Date.now();
+          if (now - (doc.lastDaily || 0) < 86400000) return json({ error: "already claimed today", points: doc.points || 0 });
+          const pts = (doc.points || 0) + DAILY_BONUS;
+          await updatePoints(env, uid, pts, (doc.totalEarned || 0) + DAILY_BONUS);
+          try { await sbPatch(env, "users", "uid", uid, { lastDaily: now }); } catch(e) {}
+          try { await fsPatch(env, `/users/${uid}`, { lastDaily: now }, ["lastDaily"]); } catch(e) {}
+          return json({ points: pts, earned: DAILY_BONUS });
+        } catch (e) { return json({ error: "auth failed" }, 401); }
+      }
+      if (p === "/api/points/costs") {
+        return json({ costs: { ...POINT_COSTS, imageGen: IMAGE_COST, defaultImage: DEFAULT_IMAGE_COST }, adReward: AD_REWARD, dailyBonus: DAILY_BONUS });
       }
 
       // LinkPreview (rich link cards)
@@ -484,8 +683,83 @@ export default {
         return json({ ok: true, sent: true });
       }
 
+      // Image generation proxy (expensive — dalle, txt2img, enhance, removebg)
+      if (p.startsWith("/api/image/") && request.method === "GET") {
+        const token = url.searchParams.get("token");
+        let uid = null;
+        if (token && env.FB_SERVICE_ACCOUNT) {
+          try { const v = await verifyIdToken(env, token); uid = v.uid; }
+          catch { return json({ error: "auth failed" }, 401); }
+          const doc = await getUserDoc(env, uid);
+          const cost = p.includes("dalle") || p.includes("txt2img") ? IMAGE_COST : DEFAULT_IMAGE_COST;
+          if ((doc.points || 0) < cost) return json({ error: "insufficient_points", points: doc.points || 0, cost }, 402);
+        }
+        const FELIX_BASE = "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api";
+        const ep = p.slice("/api/image/".length);
+        const qs = url.searchParams.toString().replace(/&?token=[^&]*/, "");
+        const target = `${FELIX_BASE}/${ep}${qs ? "?" + qs : ""}`;
+        try {
+          const r = await fetch(target, { headers: { "user-agent": "Mozilla/5.0" } });
+          const text = await r.text();
+          let data;
+          try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 5000) }; }
+          // Deduct points after successful generation
+          if (uid) {
+            const doc = await getUserDoc(env, uid);
+            const cost = p.includes("dalle") || p.includes("txt2img") ? IMAGE_COST : DEFAULT_IMAGE_COST;
+            const pts = (doc.points || 0) - cost;
+            await updatePoints(env, uid, pts);
+          }
+          return json(data);
+        } catch (e) {
+          return json({ error: String(e.message || e) }, 502);
+        }
+      }
+
+      // Felix-RDX free API proxy (all endpoints: AI, downloaders, search, tools, etc.)
+      const FELIX_BASE = "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api";
+      if (p.startsWith("/api/felix/")) {
+        const endpoint = p.slice("/api/felix/".length);
+        const qs = url.searchParams.toString();
+        const target = `${FELIX_BASE}/${endpoint}${qs ? "?" + qs : ""}`;
+        try {
+          const r = await fetch(target, { headers: { "user-agent": "Mozilla/5.0" } });
+          const text = await r.text();
+          try { return json(JSON.parse(text)); }
+          catch { return json({ raw: text.slice(0, 5000) }); }
+        } catch (e) {
+          return json({ error: String(e.message || e) }, 502);
+        }
+      }
+
+      // Felix AI models used as chat providers (non-standard API format)
+      if (p === "/api/felix/chat" && request.method === "POST") {
+        const { messages, model } = await request.json().catch(() => ({}));
+        const lastMsg = messages?.filter(m => m.role === "user").pop()?.content || "hello";
+        const sysMsg = messages?.find(m => m.role === "system")?.content || "";
+        const prompt = sysMsg ? `${sysMsg}\n\n${lastMsg}` : lastMsg;
+        const MODEL_PARAM = {
+          "llama-meta": "q", "deep-ai": "query", "gpt-5": "q", "copilot": "text",
+          "gptlogic": "q", "deepseek-r1": "q", "deepseek-v3": "q", "cohere": "q",
+          "qwen": "q", "gpt3": "q", "gemini": "q", "bible-ai": "q"
+        };
+        const param = MODEL_PARAM[model] || "q";
+        const target = `${FELIX_BASE}/${model}?${param}=${encodeURIComponent(prompt)}${sysMsg && param === "q" ? "&prompt=" + encodeURIComponent(sysMsg) : ""}`;
+        try {
+          const r = await fetch(target, { headers: { "user-agent": "Mozilla/5.0" } });
+          const d = await r.json();
+          const reply = d.result || d.response || d.text || d.message || d.content || d.data || d.reply || d.answer || d.generated_text || JSON.stringify(d).slice(0, 2000);
+          return json({ reply: typeof reply === "string" ? reply : JSON.stringify(reply), provider: "felix-" + model });
+        } catch (e) {
+          return json({ error: String(e.message || e) }, 502);
+        }
+      }
+
       // Static assets (index.html, js, css, icons...) served from the Worker
-      return env.ASSETS.fetch(request);
+      if (typeof env.ASSETS !== "undefined" && env.ASSETS !== null) {
+        return env.ASSETS.fetch(request);
+      }
+      return new Response("Not found", { status: 404 });
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
     }
