@@ -1,0 +1,54 @@
+name: Build APK
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v3.0.0)'
+        required: true
+        default: 'v3.0.0'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/agorameet-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+      - name: Install npm dependencies
+        run: npm install @capacitor/core @capacitor/cli --no-save
+      - name: Build App1 APK
+        run: python3 build_apk.py com.agorameet.app
+      - name: Build App2 APK
+        run: python3 build_apk.py com.agorameet.app2
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version || 'v3.0.0' }}
+          name: AgoraMeet v3.0.0
+          body: |
+            ## AgoraMeet v3.0.0
+            - Cloudflare Worker backend
+            - Multi-provider AI chat (NaraRouter, Groq, Mistral, SiliconFlow, Arcee, Cerebras)
+            - LiveKit AI Voice Call
+            - Speech-to-Text (STT) / Text-to-Speech (TTS)
+            - LinkPreview cards in chat
+            - B2 secure download links
+          files: |
+            projects/agorameet-v2/android/app/build/outputs/apk/release/com.agorameet.app-release.apk
+            projects/agorameet-v2/android/app/build/outputs/apk/release/com.agorameet.app2-release.apk
