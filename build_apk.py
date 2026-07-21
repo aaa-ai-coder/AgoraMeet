@@ -13,7 +13,11 @@ j["appId"] = PKG
 json.dump(j, open(cfg, "w"), indent=2)
 
 # 2) sync native project (updates namespace/applicationId/manifest)
-subprocess.run(["npx", "cap", "sync", "android"], cwd=PROJ, check=True)
+result = subprocess.run(["npx", "cap", "sync", "android"], cwd=PROJ, capture_output=True, text=True)
+print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
+if result.returncode != 0:
+    print("CAP SYNC ERROR:", result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr, file=sys.stderr)
+    sys.exit(result.returncode)
 
 # 3) fix MainActivity + custom plugin package declaration + physical location
 JAVA_FILES = ["MainActivity.java", "AdMobManager.java", "AdMobPlugin.java"]
@@ -67,6 +71,11 @@ b = re.sub(r'applicationId "[^"]*"', f'applicationId "{PKG}"', b)
 open(bg, "w").write(b)
 
 # 5) build (gradlew lives in android/, task is :app:assembleRelease)
+import sys
 AND = os.path.join(PROJ, "android")
-subprocess.run(["./gradlew", ":app:assembleRelease", "--no-daemon"], cwd=AND, check=True)
+result = subprocess.run(["./gradlew", ":app:assembleRelease", "--no-daemon"], cwd=AND, capture_output=True, text=True)
+print(result.stdout[-5000:] if len(result.stdout) > 5000 else result.stdout)
+if result.returncode != 0:
+    print("STDERR:", result.stderr[-3000:] if len(result.stderr) > 3000 else result.stderr, file=sys.stderr)
+    sys.exit(result.returncode)
 print("BUILT", PKG)
