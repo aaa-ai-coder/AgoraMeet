@@ -15,25 +15,39 @@ json.dump(j, open(cfg, "w"), indent=2)
 # 2) sync native project (updates namespace/applicationId/manifest)
 subprocess.run(["npx", "cap", "sync", "android"], cwd=PROJ, check=True)
 
-# 3) fix MainActivity package declaration + physical location
-found = None
-for root, _, files in os.walk(os.path.join(APP, "src", "main", "java")):
-    if "MainActivity.java" in files:
-        found = os.path.join(root, "MainActivity.java")
-        break
-content = open(found).read()
-content = re.sub(r'^package .*;', f'package {PKG};', content, flags=re.M)
-dst_dir = os.path.join(APP, "src", "main", "java", *PKG.split("."))
-os.makedirs(dst_dir, exist_ok=True)
-dst = os.path.join(dst_dir, "MainActivity.java")
-open(dst, "w").write(content)
-if os.path.abspath(dst) != os.path.abspath(found):
-    os.remove(found)
-    p = os.path.dirname(found)
-    while p != os.path.join(APP, "src", "main", "java"):
-        if not os.listdir(p):
-            os.rmdir(p)
-        p = os.path.dirname(p)
+# 3) fix MainActivity + custom plugin package declaration + physical location
+JAVA_FILES = ["MainActivity.java", "AdMobManager.java", "AdMobPlugin.java"]
+for jf in JAVA_FILES:
+    found = None
+    for root, _, files in os.walk(os.path.join(APP, "src", "main", "java")):
+        if jf in files:
+            found = os.path.join(root, jf)
+            break
+    if not found: continue
+    content = open(found).read()
+    content = re.sub(r'^package .*;', f'package {PKG};', content, flags=re.M)
+    dst_dir = os.path.join(APP, "src", "main", "java", *PKG.split("."))
+    os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir, jf)
+    open(dst, "w").write(content)
+    if os.path.abspath(dst) != os.path.abspath(found):
+        os.remove(found)
+        p = os.path.dirname(found)
+        while p != os.path.join(APP, "src", "main", "java"):
+            if not os.listdir(p):
+                os.rmdir(p)
+            p = os.path.dirname(p)
+
+# 3b) update capacitor.plugins.json with correct package
+pjson = os.path.join(APP, "src", "main", "assets", "capacitor.plugins.json")
+if os.path.exists(pjson):
+    plugins = json.load(open(pjson))
+    for pl in plugins:
+        pk = pl.get("pkg", "")
+        if BASE in pk:
+            pl["pkg"] = pk.replace(BASE, PKG)
+            pl["class"] = pl.get("class", "").replace(BASE, PKG)
+    json.dump(plugins, open(pjson, "w"))
 
 # 4) strings.xml package_name + custom_url_scheme
 sx = os.path.join(APP, "src", "main", "res", "values", "strings.xml")
