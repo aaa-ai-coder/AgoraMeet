@@ -19,21 +19,23 @@ public class AdMobPlugin extends Plugin {
         getBridge().getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                final boolean[] resolved = {false};
                 AdMobManager.getInstance().showAd(getActivity(), new AdMobManager.RewardListener() {
                     @Override
                     public void onRewarded(int amount) {
+                        resolved[0] = true;
                         call.resolve(new com.getcapacitor.JSObject()
                             .put("rewarded", true)
                             .put("amount", amount));
                     }
                     @Override
                     public void onAdFailed(String error) {
+                        resolved[0] = true;
                         call.reject(error);
                     }
                     @Override
                     public void onAdDismissed() {
-                        // already resolved via onRewarded if rewarded
-                        if (!call.getKeepAlive()) {
+                        if (!resolved[0]) {
                             call.resolve(new com.getcapacitor.JSObject().put("dismissed", true));
                         }
                     }
