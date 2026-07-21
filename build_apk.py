@@ -53,16 +53,4 @@ open(bg, "w").write(b)
 # 5) build (gradlew lives in android/, task is :app:assembleRelease)
 AND = os.path.join(PROJ, "android")
 subprocess.run(["./gradlew", ":app:assembleRelease", "--no-daemon"], cwd=AND, check=True)
-
-# 6) rename apk to package name
-apk_dir = os.path.join(APP, "build", "outputs", "apk", "release")
-if os.path.exists(apk_dir):
-    for f in os.listdir(apk_dir):
-        if f.endswith(".apk") and "unaligned" not in f and "unsigned" not in f:
-            src = os.path.join(apk_dir, f)
-            dst = os.path.join(apk_dir, f"{PKG}-release.apk")
-            if src != dst:
-                os.rename(src, dst)
-                print(f"Renamed {f} -> {PKG}-release.apk")
-            print("BUILT", PKG)
-            break
+print("BUILT", PKG)
