@@ -501,12 +501,34 @@ export default {
         return r.ok;
       }
 
+      // Appwrite REST helper
+      const AW_URL = "https://sgp.cloud.appwrite.io/v1";
+      const AW_KEY = "standard_1c216aff382fa8e7fe3f1ac198d5375cb52a7dc0989b571ecd612f8154c6743fd028bad6e0c0bcb1510697725209fa98b8f1f897ddb9f7af9fbeabfc161a36ef6a0655961c350633e4b3cb045fa27782aea6d79a5597e16d1afac2f17f1dfd941088175a6783feeef8e976028662184ee834bbf48807910b3385bffc9fe09ca1cha";
+      async function awQuery(env, path, params) {
+        const qs = params ? "?" + new URLSearchParams(params) : "";
+        const r = await fetch(`${AW_URL}${path}${qs}`, {
+          headers: { "X-Appwrite-Project": "standard", "X-Appwrite-Key": env.APPWRITE_KEY || AW_KEY, "Content-Type": "application/json" }
+        });
+        return r.json();
+      }
+      async function awCreate(env, path, data) {
+        const r = await fetch(`${AW_URL}${path}`, {
+          method: "POST", headers: { "X-Appwrite-Project": "standard", "X-Appwrite-Key": env.APPWRITE_KEY || AW_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        });
+        return r.json();
+      }
+
       // Points system — users earn points by watching ads, spend on AI
       const POINT_COSTS = { felix: 1, gemini: 2, groq: 2, mistral: 3, openrouter: 3, nara: 1, siliconflow: 2, arcee: 2, cerebras: 2, default: 5 };
       const IMAGE_COST = 50; const DEFAULT_IMAGE_COST = 30;
       const AD_REWARD = 200; const DAILY_BONUS = 10;
       async function getUserDoc(env, uid) {
-        // Try Supabase first, fallback to Firestore
+        // Try Appwrite, then Supabase, then Firestore
+        try {
+          const aw = await awQuery(env, `/databases/default/collections/users/documents`, { queries: JSON.stringify([`uid=${uid}`]) });
+          if (aw && aw.documents && aw.documents.length > 0) return aw.documents[0];
+        } catch(e) {}
         try {
           const rows = await sbQuery(env, "users", { select: "*", uid: `eq.${uid}`, limit: "1" });
           if (rows && rows.length > 0) return rows[0];
@@ -523,6 +545,7 @@ export default {
         return doc;
       }
       async function updatePoints(env, uid, pts, totalEarned) {
+        try { await awCreate(env, "/databases/default/collections/users/documents", { documentId: uid, data: { uid, points: pts, totalEarned: totalEarned || 0, updatedAt: new Date().toISOString() }, permissions: ['read("any")', 'write("any")'] }); } catch(e) {}
         try { await sbUpsert(env, "users", { uid, points: pts, totalEarned: totalEarned || 0, updatedAt: new Date().toISOString() }); } catch(e) {}
         try { await fsPatch(env, `/users/${uid}`, { points: pts, totalEarned: totalEarned || 0 }, ["points", "totalEarned"]); } catch(e) {}
       }

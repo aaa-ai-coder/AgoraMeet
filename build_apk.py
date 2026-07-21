@@ -38,16 +38,18 @@ for jf in JAVA_FILES:
                 os.rmdir(p)
             p = os.path.dirname(p)
 
-# 3b) update capacitor.plugins.json with correct package
+# 3b) ensure capacitor.plugins.json has our custom AdMob plugin registered
 pjson = os.path.join(APP, "src", "main", "assets", "capacitor.plugins.json")
-if os.path.exists(pjson):
-    plugins = json.load(open(pjson))
-    for pl in plugins:
-        pk = pl.get("pkg", "")
-        if BASE in pk:
-            pl["pkg"] = pk.replace(BASE, PKG)
-            pl["class"] = pl.get("class", "").replace(BASE, PKG)
-    json.dump(plugins, open(pjson, "w"))
+plugins = json.load(open(pjson)) if os.path.exists(pjson) else []
+admob_entry = {"pkg": f"{PKG}.AdMobPlugin", "class": f"{PKG}.AdMobPlugin"}
+if not any(p.get("class", "").endswith("AdMobPlugin") for p in plugins):
+    plugins.append(admob_entry)
+else:
+    for p in plugins:
+        if p.get("class", "").endswith("AdMobPlugin"):
+            p["pkg"] = f"{PKG}.AdMobPlugin"
+            p["class"] = f"{PKG}.AdMobPlugin"
+json.dump(plugins, open(pjson, "w"))
 
 # 4) strings.xml package_name + custom_url_scheme
 sx = os.path.join(APP, "src", "main", "res", "values", "strings.xml")
