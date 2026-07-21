@@ -9,9 +9,10 @@ import {
   addDoc, getDocs, serverTimestamp, getDoc, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2.3.3";
+const VERSION = "3.0.0";
 const $ = (id) => document.getElementById(id);
-const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.onrender.com";
+const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.agorameet.workers.dev";
+const LINKPREVIEW_KEY = (document.querySelector('meta[name="linkpreview-key"]') || {}).content || "";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
 let app, auth, db, fbApp;
 let currentUser = null;
@@ -266,6 +267,35 @@ async function openConversation(peerUid, peerName, type = "user") {
   const cid = (type === "group") ? peerUid : chatId(currentUser.uid, peerUid);
   const q = query(collection(db, "chats", cid, "messages"), orderBy("ts", "asc"));
   const box = $("messages"); box.innerHTML = "";
+  const lpCache = {};
+  async function renderLinkPreview(el, text) {
+    if (!LINKPREVIEW_KEY) return;
+    const urlMatch = text.match(/(https?:\/\/[^\s<>"']+)/gi);
+    if (!urlMatch) return;
+    const url = urlMatch[0];
+    if (lpCache[url]) {
+      appendLinkCard(el, lpCache[url], url);
+      return;
+    }
+    try {
+      const r = await fetch(`https://api.linkpreview.net/?key=${LINKPREVIEW_KEY}&q=${encodeURIComponent(url)}`, { headers: { "user-agent": "Mozilla/5.0 (AgoraMeet)" } });
+      const d = await r.json();
+      if (d.title || d.image) {
+        lpCache[url] = d;
+        appendLinkCard(el, d, url);
+      }
+    } catch (e) {}
+  }
+  function appendLinkCard(parent, data, url) {
+    const card = document.createElement("div");
+    card.className = "lp-card";
+    card.innerHTML = `<a href="${url}" target="_blank" class="lp-link">
+      ${data.image ? `<img src="${data.image}" class="lp-img" loading="lazy" onerror="this.style.display='none'">` : ""}
+      <div class="lp-info"><div class="lp-title">${esc(data.title || data.url)}</div>
+      ${data.description ? `<div class="lp-desc">${esc(data.description)}</div>` : ""}
+      <div class="lp-url">${new URL(url).hostname}</div></div></a>`;
+    parent.appendChild(card);
+  }
   unsubMessages = onSnapshot(q, snap => {
     box.innerHTML = "";
     snap.forEach(d => {
@@ -277,6 +307,7 @@ async function openConversation(peerUid, peerName, type = "user") {
       const ticks = mine ? '<span class="ticks">✓✓</span>' : "";
       div.innerHTML = who + esc(m.text) + ticks + `<span class="t">${timeStr(m.ts)}</span>`;
       box.appendChild(div);
+      if (m.text && LINKPREVIEW_KEY) renderLinkPreview(div, m.text);
     });
     box.scrollTop = box.scrollHeight;
   });
@@ -534,6 +565,82 @@ function aiBubble(role, text) {
 $("aiModel").onchange = () => { aiModel = $("aiModel").value; };
 $("aiClearBtn").onclick = () => { aiHistory = [{ role: "system", content: AI_SYSTEM }]; $("aiMessages").innerHTML = ""; toast("Chat cleared"); };
 $("aiBackBtn").onclick = () => showView("chatsView");
+
+// TTS (Text-to-Speech) toggle
+let aiTtsEnabled = false;
+$("aiTtsToggleBtn").onclick = () => {
+  aiTtsEnabled = !aiTtsEnabled;
+  if (aiTtsEnabled) {
+    $("aiTtsToggleBtn").innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+    $("aiTtsToggleBtn").style.color = "var(--teal)";
+    toast("AI will speak responses");
+  } else {
+    $("aiTtsToggleBtn").innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
+    $("aiTtsToggleBtn").style.color = "var(--text-sub)";
+    window.speechSynthesis.cancel();
+  }
+};
+
+// STT (Speech-to-Text) dictation
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let sttRecognition = null;
+if (SpeechRecognition) {
+  sttRecognition = new SpeechRecognition();
+  sttRecognition.continuous = false;
+  sttRecognition.interimResults = false;
+  sttRecognition.lang = "en-US";
+  sttRecognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    $("aiInput").value = text;
+    $("aiSendBtn").click();
+  };
+  sttRecognition.onerror = () => { toast("Speech recognition failed"); $("aiMicBtn").style.color = "var(--text-sub)"; };
+}
+$("aiMicBtn").onclick = () => {
+  if (!sttRecognition) { toast("Speech recognition not supported"); return; }
+  try { sttRecognition.start(); $("aiMicBtn").style.color = "var(--teal)"; toast("Listening…"); }
+  catch { sttRecognition.stop(); }
+};
+
+// LiveKit AI Voice Call
+let lkRoom = null, lkActive = false, lkLocalTrack = null;
+async function startAiVoiceCall() {
+  if (lkActive) return endAiVoiceCall();
+  if (typeof LiveKit === "undefined") { toast("LiveKit SDK not loaded"); return; }
+  toast("Connecting to AI Voice…");
+  $("aiVoiceCallBtn").style.color = "var(--red)";
+  $("aiVoiceCallBtn").innerHTML = '<i class="fa-solid fa-phone-slash"></i>';
+  lkActive = true;
+  try {
+    const roomName = "ai-voice-" + (currentUser?.uid?.slice(-8) || "guest");
+    const r = await fetch(api("/api/ai/voice"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ room: roomName, identity: "user-" + (currentUser?.uid || "guest"), name: currentUser?.displayName || "User" })
+    });
+    if (!r.ok) throw new Error("Failed to get token");
+    const { token, url } = await r.json();
+    lkRoom = new LiveKit.Room();
+    lkRoom.on(LiveKit.RoomEvent.Connected, () => toast("AI Connected! Say something…"));
+    lkRoom.on(LiveKit.RoomEvent.Disconnected, () => endAiVoiceCall());
+    lkRoom.on(LiveKit.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === "audio") { const el = track.attach(); document.body.appendChild(el); }
+    });
+    await lkRoom.connect(url, token);
+    lkLocalTrack = await LiveKit.createLocalAudioTrack();
+    await lkRoom.localParticipant.publishTrack(lkLocalTrack);
+  } catch (e) { toast("Call failed: " + e.message); endAiVoiceCall(); }
+}
+function endAiVoiceCall() {
+  lkActive = false;
+  if (lkRoom) { try { lkRoom.disconnect(); } catch {}};
+  lkRoom = null, lkLocalTrack = null;
+  $("aiVoiceCallBtn").style.color = "var(--teal)";
+  $("aiVoiceCallBtn").innerHTML = '<i class="fa-solid fa-phone"></i>';
+  toast("AI Call ended");
+}
+$("aiVoiceCallBtn").onclick = startAiVoiceCall;
+window.addEventListener("beforeunload", () => { if (lkRoom) lkRoom.disconnect(); });
+
 $("aiSendBtn").onclick = async () => {
   const text = $("aiInput").value.trim();
   if (!text) return;
@@ -542,14 +649,22 @@ $("aiSendBtn").onclick = async () => {
   aiHistory.push({ role: "user", content: text });
   $("aiStatus").textContent = "typing…";
   try {
-    const r = await fetch(api("/api/ai/chat"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
+    const [provider, model] = aiModel.includes(":") ? aiModel.split(":") : ["", aiModel];
+    const r = await fetch(api("/api/ai/chat"), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: aiHistory, model, provider: provider || undefined })
+    });
     const data = await r.json();
     const reply = data.reply || data.error || "(no response)";
     aiBubble("assistant", reply);
     aiHistory.push({ role: "assistant", content: reply });
-  } catch (e) {
-    aiBubble("assistant", "Error: " + e.message);
-  }
+    if (aiTtsEnabled) {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(reply);
+      utter.rate = 0.95;
+      window.speechSynthesis.speak(utter);
+    }
+  } catch (e) { aiBubble("assistant", "Error: " + e.message); }
   $("aiStatus").textContent = "ready";
 };
 $("aiInput").addEventListener("keydown", e => { if (e.key === "Enter") $("aiSendBtn").onclick(); });

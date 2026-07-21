@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
   <title>AgoraMeet</title>
-  <meta name="api-base" content="https://agorameet-server.onrender.com">
+  <meta name="api-base" content="https://agorameet-server.agorameet.workers.dev">
+  <meta name="linkpreview-key" content="163bd82f6ec3dd95417c38c8dd127f0d">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="icon.svg">
@@ -100,18 +101,22 @@
               <div class="conv-status" id="aiStatus">ready</div>
             </div>
             <select id="aiModel" class="ai-model-select">
-              <option value="tencent-hy3">tencent-hy3</option>
-              <option value="mistral-medium-3-5">mistral-medium-3-5</option>
-              <option value="mistral-large">mistral-large</option>
-              <option value="glm-5.2-free">glm-5.2-free</option>
-              <option value="agnes-2.0-flash">agnes-2.0-flash</option>
+              <option value="nara:tencent-hy3">Nara: Tencent</option>
+              <option value="groq:llama-3.3-70b-versatile">Groq: LLaMA 3.3</option>
+              <option value="mistral:mistral-large-latest">Mistral Large</option>
+              <option value="siliconflow:deepseek-ai/DeepSeek-V3">SiliconFlow: DeepSeek V3</option>
+              <option value="arcee:arcee-ai/arcee-blitz">Arcee Blitz</option>
+              <option value="cerebras:llama-3.3-70b">Cerebras LLaMA</option>
             </select>
+            <button id="aiVoiceCallBtn" class="icon-btn" title="Voice Call AI" style="color:var(--teal);margin-right:6px"><i class="fa-solid fa-phone"></i></button>
             <button id="aiClearBtn" class="icon-btn" title="Clear"><i class="fa-solid fa-trash"></i></button>
           </div>
           <div id="aiMessages" class="messages"></div>
           <div class="composer">
+            <button id="aiMicBtn" class="icon-btn" title="Speak" style="color:var(--text-sub);margin-right:6px"><i class="fa-solid fa-microphone"></i></button>
             <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
             <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+            <button id="aiTtsToggleBtn" class="icon-btn" title="Speak Responses" style="color:var(--text-sub);margin-left:6px"><i class="fa-solid fa-volume-xmark"></i></button>
           </div>
         </div>
 
@@ -130,7 +135,7 @@
             <div class="settings-item" id="setPrivacyBtn"><i class="fa-solid fa-shield-halved"></i><span>Privacy Policy</span></div>
             <div class="settings-item danger" id="setLogoutBtn"><i class="fa-solid fa-right-from-bracket"></i><span>Log out</span></div>
           </div>
-          <div class="settings-foot"><span id="appVersion">AgoraMeet v2.3.3</span></div>
+          <div class="settings-foot"><span id="appVersion">AgoraMeet v3.0.0</span></div>
         </div>
 
         <!-- Conversation -->
@@ -226,7 +231,8 @@
 
   <div id="toast"></div>
 
-  <!-- Firebase + Agora from CDN (app needs network for these services anyway) -->
+  <!-- Firebase + Agora + LiveKit from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
