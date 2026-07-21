@@ -1,0 +1,8 @@
+name = "agorameet-server"
+main = "cf-worker/worker.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+GH_REPO = "aaa-ai-coder/AgoraMeet"
+
+# No external bindings - secrets will be set via wrangler secret put

@@ -10,7 +10,7 @@ Agora-powered video & voice conferencing web app with a native Android wrapper (
 - Offline-bundled Agora SDK (no CDN dependency)
 
 ## Live backend
-The token server is deployed on Render: `https://agorameet-server.onrender.com`
+The token server is deployed on Render: `https://agorameet-server.agorameet.workers.dev`
 
 ## Download the Android APK
 APKs are published as GitHub Release artifacts (no local hosting needed):

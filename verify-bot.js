@@ -2,7 +2,7 @@
 // Receives /start <code>, shows an inline "Confirm login" button, then calls the server's confirm endpoint.
 const BOT_TOKEN = process.env.VERIFY_BOT_TOKEN;
 if (!BOT_TOKEN) { console.error("Set VERIFY_BOT_TOKEN"); process.exit(1); }
-const SERVER = process.env.AGORAMEET_SERVER || "https://agorameet-server.onrender.com";
+const SERVER = process.env.AGORAMEET_SERVER || "https://agorameet-server.agorameet.workers.dev";
 const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 async function call(method, body) {
