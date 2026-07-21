@@ -20,7 +20,7 @@ if result.returncode != 0:
     sys.exit(result.returncode)
 
 # 3) fix MainActivity + custom plugin package declaration + physical location
-JAVA_FILES = ["MainActivity.java", "AdMobManager.java", "AdMobPlugin.java"]
+JAVA_FILES = ["MainActivity.java", "AdMobManager.java", "AdMobPlugin.java", "OfflineEngine.java", "OfflinePlugin.java"]
 for jf in JAVA_FILES:
     found = None
     for root, _, files in os.walk(os.path.join(APP, "src", "main", "java")):
@@ -45,14 +45,18 @@ for jf in JAVA_FILES:
 # 3b) ensure capacitor.plugins.json has our custom AdMob plugin registered
 pjson = os.path.join(APP, "src", "main", "assets", "capacitor.plugins.json")
 plugins = json.load(open(pjson)) if os.path.exists(pjson) else []
-admob_entry = {"pkg": f"{PKG}.AdMobPlugin", "class": f"{PKG}.AdMobPlugin"}
-if not any(p.get("class", "").endswith("AdMobPlugin") for p in plugins):
-    plugins.append(admob_entry)
-else:
-    for p in plugins:
-        if p.get("class", "").endswith("AdMobPlugin"):
-            p["pkg"] = f"{PKG}.AdMobPlugin"
-            p["class"] = f"{PKG}.AdMobPlugin"
+CUSTOM_PLUGINS = [
+    {"classSuffix": "AdMobPlugin", "pkg": f"{PKG}.AdMobPlugin", "cls": f"{PKG}.AdMobPlugin"},
+    {"classSuffix": "OfflinePlugin", "pkg": f"{PKG}.OfflinePlugin", "cls": f"{PKG}.OfflinePlugin"},
+]
+for cp in CUSTOM_PLUGINS:
+    if not any(p.get("class", "").endswith(cp["classSuffix"]) for p in plugins):
+        plugins.append({"pkg": cp["pkg"], "class": cp["cls"]})
+    else:
+        for p in plugins:
+            if p.get("class", "").endswith(cp["classSuffix"]):
+                p["pkg"] = cp["pkg"]
+                p["class"] = cp["cls"]
 json.dump(plugins, open(pjson, "w"))
 
 # 4) strings.xml package_name + custom_url_scheme
