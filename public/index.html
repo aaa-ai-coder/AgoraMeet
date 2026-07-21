@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
   <title>AgoraMeet</title>
   <meta name="api-base" content="https://agorameet-server.agorameet.workers.dev">
-  <meta name="linkpreview-key" content="163bd82f6ec3dd95417c38c8dd127f0d">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="icon.svg">
@@ -23,37 +22,59 @@
           <h1>AgoraMeet</h1>
           <p class="sub">Connect with anyone, anywhere.</p>
         </div>
-        <div id="phoneStep">
+
+        <!-- Login tabs -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="phoneTab">Phone</button>
+          <button class="auth-tab" data-tab="emailTab">Email</button>
+        </div>
+
+        <!-- Phone login -->
+        <div id="phoneTab" class="auth-tab-content active">
           <label>Phone number</label>
           <div class="phone-row">
             <select id="countryCode" class="cc-select"></select>
-            <input id="phoneInput" type="tel" placeholder="phone number" autocomplete="off">
+            <input id="phoneInput" type="tel" placeholder="phone number" autocomplete="tel">
           </div>
+          <div id="phoneFormatted" class="phone-formatted hidden"></div>
           <button id="sendOtpBtn" class="btn-primary"><i class="fa-brands fa-telegram"></i> Verify with Telegram</button>
-          <div id="tgHint" class="hint hidden">We'll send a code to our Telegram bot. Tap "Open Telegram" and reply YES.</div>
+          <div id="tgHint" class="hint hidden"><i class="fa-regular fa-circle-check" style="color:var(--teal)"></i> We'll send a request to our Telegram bot. Tap "Confirm login" to verify.</div>
           <button id="googleBtn" class="btn-google"><i class="fa-brands fa-google"></i> Continue with Google</button>
-          <p class="alt-link" id="useEmailLink">Use email instead</p>
         </div>
-        <div id="otpStep" class="hidden">
-          <label>Confirm in Telegram</label>
-          <p class="sub" style="text-align:center">Open the bot and tap <b>✅ Confirm login</b> to verify <span id="tgPhone"></span></p>
-          <a id="tgOpen" class="btn-primary" style="text-align:center;text-decoration:none;display:block" href="#" target="_blank">Open Telegram</a>
-          <button id="tgCheck" class="btn-primary" style="margin-top:12px;background:var(--panel2);color:var(--text);box-shadow:none">Check status</button>
-          <p class="alt-link" id="resendLink">Use a different number</p>
-          <p id="tgStatus" class="hint" style="text-align:center;color:var(--teal)"></p>
+
+        <!-- Telegram OTP confirm -->
+        <div id="otpStep" class="hidden" style="padding:0 6px">
+          <div class="tg-verify-card">
+            <div class="tg-verify-icon"><i class="fa-brands fa-telegram"></i></div>
+            <p style="font-weight:600;font-size:15px;margin:10px 0 4px">Confirm login</p>
+            <p class="sub" style="font-size:13px">Open Telegram and tap <b>Confirm login</b> to verify <br><b style="color:var(--teal);font-size:15px" id="tgPhone"></b></p>
+            <a id="tgOpen" class="btn-primary" style="text-align:center;text-decoration:none;display:block;margin-top:16px" href="#" target="_blank">Open Telegram</a>
+            <button id="tgCheck" class="btn-secondary" style="margin-top:10px">Check status</button>
+            <p id="tgStatus" class="hint" style="text-align:center;color:var(--teal);margin-top:8px"></p>
+            <p class="alt-link" id="resendLink" style="margin-top:14px">Use a different number</p>
+          </div>
         </div>
-        <div id="emailStep" class="hidden">
+
+        <!-- Email login -->
+        <div id="emailTab" class="auth-tab-content">
           <label>Email</label>
-          <input id="emailInput" type="email" placeholder="you@email.com" autocomplete="email">
+          <input id="emailInput" type="email" placeholder="you@email.com" autocomplete="email" autocapitalize="off">
           <label>Password</label>
           <div class="phone-row" style="padding:0 14px">
-            <input id="passwordInput" type="password" placeholder="••••••••" autocomplete="current-password" style="padding:14px 0">
+            <input id="passwordInput" type="password" placeholder="••••••••" autocomplete="current-password" style="padding:14px 0;border:none!important;box-shadow:none!important">
             <button id="pwToggle" class="icon-btn" type="button" title="Show/Hide"><i class="fa-solid fa-eye"></i></button>
           </div>
-          <button id="emailBtn" class="btn-primary">Sign in / Create account</button>
-          <p class="alt-link" id="forgotPw">Forgot password?</p>
-          <p class="alt-link" id="usePhoneLink">Use phone instead</p>
+          <div id="pwStrength" class="pw-strength hidden"><div class="pw-bar" id="pwBar"></div><span id="pwLabel" class="pw-label"></span></div>
+          <button id="emailBtn" class="btn-primary">Continue</button>
+          <div class="auth-links">
+            <span class="alt-link" id="forgotPw">Forgot password?</span>
+          </div>
         </div>
+
+        <!-- Terms + error -->
+        <label class="terms-row" style="margin-top:10px">
+          <input type="checkbox" id="termsCheck" checked> <span style="font-size:12px;color:var(--muted)">I agree to the <a href="#" onclick="event.preventDefault();$('setPrivacyBtn').click()" style="color:var(--teal)">Terms & Privacy Policy</a></span>
+        </label>
         <p id="authError" class="error hidden"></p>
         <div id="authLoader" class="auth-loader hidden"><div class="spinner"></div><span>Connecting…</span></div>
         <div id="recaptcha"></div>
@@ -101,22 +122,18 @@
               <div class="conv-status" id="aiStatus">ready</div>
             </div>
             <select id="aiModel" class="ai-model-select">
-              <option value="nara:tencent-hy3">Nara: Tencent</option>
-              <option value="groq:llama-3.3-70b-versatile">Groq: LLaMA 3.3</option>
-              <option value="mistral:mistral-large-latest">Mistral Large</option>
-              <option value="siliconflow:deepseek-ai/DeepSeek-V3">SiliconFlow: DeepSeek V3</option>
-              <option value="arcee:arcee-ai/arcee-blitz">Arcee Blitz</option>
-              <option value="cerebras:llama-3.3-70b">Cerebras LLaMA</option>
+              <option value="tencent-hy3">tencent-hy3</option>
+              <option value="mistral-medium-3-5">mistral-medium-3-5</option>
+              <option value="mistral-large">mistral-large</option>
+              <option value="glm-5.2-free">glm-5.2-free</option>
+              <option value="agnes-2.0-flash">agnes-2.0-flash</option>
             </select>
-            <button id="aiVoiceCallBtn" class="icon-btn" title="Voice Call AI" style="color:var(--teal);margin-right:6px"><i class="fa-solid fa-phone"></i></button>
             <button id="aiClearBtn" class="icon-btn" title="Clear"><i class="fa-solid fa-trash"></i></button>
           </div>
           <div id="aiMessages" class="messages"></div>
           <div class="composer">
-            <button id="aiMicBtn" class="icon-btn" title="Speak" style="color:var(--text-sub);margin-right:6px"><i class="fa-solid fa-microphone"></i></button>
             <input id="aiInput" placeholder="Ask anything…" autocomplete="off">
             <button id="aiSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
-            <button id="aiTtsToggleBtn" class="icon-btn" title="Speak Responses" style="color:var(--text-sub);margin-left:6px"><i class="fa-solid fa-volume-xmark"></i></button>
           </div>
         </div>
 
@@ -152,11 +169,25 @@
               <button id="callVideoBtn" title="Video call"><i class="fa-solid fa-video"></i></button>
             </div>
           </div>
-          <div id="messages" class="messages"></div>
-          <div class="composer">
-            <input id="msgInput" placeholder="Message" autocomplete="off">
-            <button id="sendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+          <div id="messages" class="messages">
+            <div id="typingIndicator" class="typing-indicator hidden">
+              <div class="typing-dots"><span></span><span></span><span></span></div>
+              typing…
+            </div>
           </div>
+          <div id="attachPreview" class="attach-preview hidden">
+            <img id="attachPreviewImg" src="">
+            <span class="ap-name" id="attachPreviewName"></span>
+            <button class="ap-close" id="attachClearBtn"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <div class="composer" id="convComposer">
+            <button id="attachBtn" class="composer-btn" title="Attach"><i class="fa-solid fa-paperclip"></i></button>
+            <input id="msgInput" placeholder="Message" autocomplete="off">
+            <button id="voiceBtn" class="composer-btn" title="Voice message"><i class="fa-solid fa-microphone"></i></button>
+            <button id="sendBtn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" style="display:none">
+          <div id="emojiPicker" class="emoji-picker hidden"></div>
         </div>
 
         <!-- Group create -->
@@ -231,8 +262,7 @@
 
   <div id="toast"></div>
 
-  <!-- Firebase + Agora + LiveKit from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+  <!-- Firebase + Agora from CDN (app needs network for these services anyway) -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

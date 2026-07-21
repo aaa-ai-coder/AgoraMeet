@@ -6,19 +6,25 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, limit,
-  addDoc, getDocs, serverTimestamp, getDoc, where
+  addDoc, getDocs, serverTimestamp, getDoc, where, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const VERSION = "3.0.0";
 const $ = (id) => document.getElementById(id);
 const API_BASE = (document.querySelector('meta[name="api-base"]') || {}).content || "https://agorameet-server.agorameet.workers.dev";
-const LINKPREVIEW_KEY = (document.querySelector('meta[name="linkpreview-key"]') || {}).content || "";
 const api = (path) => API_BASE.replace(/\/$/, "") + path;
 let app, auth, db, fbApp;
 let currentUser = null;
 let currentPeer = null;     // {uid, name, phone}
 let unsubMessages = null;
 let unsubChats = null;
+let unsubTyping = null;
+let typingTimer = null;
+let voiceRecorder = null;
+let voiceChunks = [];
+let voiceActive = false;
+
+const EMOJIS = ["😀","😃","😄","😁","😅","😂","🤣","😊","😇","🙂","🙃","😉","😌","😍","🥰","😘","😗","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🫣","🤫","🤔","🤐","🤨","😐","😑","😶","🫥","😏","😒","🙄","😬","🤥","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🥴","😵","🤯","🥳","🥺","😢","😭","😤","😠","😡","🤬","👋","✋","🖐","✌","🤞","🫰","🤟","🤘","🤙","👌","👍","👎","✊","👊","🤛","🤜","👏","🙌","🫶","👐","🤲","🤝","💪","🦵","🦶","👂","🦻","👃","🧠","🦷","👅","👀","👁","👶","🧒","👦","👧","🧑","👨","👩","🧔","👴","👵","🙋","💁","🙅","🙆","🙇","🤷","💆","💇","🚶","🧍","🏃","💃","🕺","🕴","👯","🧖","🧘","🛀","🛌","🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦","🐤","🐣","🐥","🦆","🦅","🦉","🦇","🐺","🐗","🐴","🦄","🐝","🐛","🦋","🐌","🐞","🐜","🦟","🦗","🕷","🦂","🐢","🐍","🦎","🦖","🦕","🐙","🦑","🦐","🦀","🐡","🐠","🐟","🐬","🐳","🐋","🦈","🐊","🐅","🐆","🦓","🦍","🐘","🦛","🦏","🐪","🐫","🦒","🦘","🐃","🐂","🐄","🐎","🐖","🐏","🐑","🦙","🐐","🦌","🐕","🐩","🦮","🐕‍🦺","🐈","🐓","🦃","🦤","🦚","🦜","🦢","🦩","🕊","🐇","🦝","🦨","🦡","🦫","🦦","🦥","🐁","🐀","🐿","🦔","🐾","🐉","🐲","🌵","🎄","🌲","🌳","🌴","🌱","🌿","☘","🍀","🎍","🎋","🍃","🍂","🍁","🍄","🌾","💐","🌷","🌹","🥀","🌺","🌸","🌼","🌻","🌞","🌝","🌛","🌜","🌚","🌕","🌖","🌗","🌘","🌑","🌒","🌓","🌔","🌙","🌎","🌍","🌏","🪐","💫","⭐","🌟","✨","⚡","🔥","💥","☄","🌈","🌊","🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥝","🥥","🥑","🍆","🥔","🥕","🌽","🌶","🥒","🥬","🥦","🧄","🧅","🍄","🥜","🌰","🍞","🥐","🥖","🥨","🧀","🥚","🍳","🧈","🥞","🧇","🥓","🥩","🍗","🍖","🦴","🌭","🍔","🍟","🍕","🫓","🥪","🥙","🧆","🌮","🌯","🥗","🥘","🫕","🥫","🍝","🍜","🍲","🍛","🍣","🍱","🥟","🦪","🍤","🍙","🍚","🍘","🍥","🥠","🥮","🍢","🍡","🍧","🍨","🍦","🥧","🧁","🍰","🎂","🍮","🍭","🍬","🍫","🍿","🍩","🍪","🌰","🥜","🍯","🥛","🍼","🫖","☕","🍵","🧃","🥤","🧊","🍶","🍺","🍻","🥂","🍷","🫗","🥃","🍸","🍹","🧉","🍾","🧊","🥄","🔪","🏺","🌍","🌎","🌏","❤","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣","💕","💞","💓","💗","💖","💘","💝","💟","☮","✝","☪","🕉","☸","✡","🔯","🕎","☯","☦","🛐","⛎","♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓","🆔","⚕","♿","🈳","🈹","📵","🔞","☢","☣","⬆","↗","➡","↘","⬇","↙","⬅","↖","↕","↔","↩","↪","⤴","⤵","🔃","🔄","🔙","🔚","🔛","🔜","🔝","🛐","🎵","🎶","🎼","🎤","🎧","📻","🎷","🎸","🎹","🎺","🎻","🪕","🥁","🎬","🎨","🎭","🎪","🎟","🎫","🏆","🏅","🥇","🥈","🥉","⚽","⚾","🥎","🏀","🏐","🏈","🏉","🎾","🥏","🎳","🏏","🏑","🏒","🥍","🏓","🏸","🥊","🥋","⛸","🛷","⛷","🏂","🪂","🏋","🤼","🤸","🤺","⛹","🤾","🏌","🏇","🧘","🏄","🏊","🤽","🚣","🏹","🧗","🚵","🚴","🏆","🎽","🏅","🎖","🏵","🎗","🎫","🎪","🤹","📱","📲","💻","⌨","🖥","🖨","🖱","🖲","🕹","🗜","💽","💾","💿","📀","📼","📷","📸","📹","🎥","📽","🎞","📞","☎","📟","📠","📺","📻","🎙","🎚","🎛","🧭","⏱","⏲","⏰","🕰","⌛","📡","🔋","🔌","💡","🔦","🕯","🪔","🧯","🗑","🔍","🔎","🔧","🔩","⚙","🗜","🔨","⛏","🪓","🔫","🏹","🛡","🚬","⚰","🪦","⚱","🏺","🔮","📿","💈","⚗","🔭","🔬","🕳","💊","💉","🩸","🩹","🩺","🚑","🚒","🚓","🚔","🚨","🚗","🚙","🚕","🚌","🚎","🏎","🚓","🚑","🚒","🚐","🛻","🚚","🚛","🚜","🏍","🛵","🛺","🚲","🛴","🛹","🛼","🚏","🛣","🛤","⛽","🛳","⛴","🛥","🚢","✈","🛩","🛫","🛬","🪂","💺","🚁","🚟","🚠","🚡","🛰","🚀","🛸","🏠","🏡","🏘","🏚","🏗","🏢","🏬","🏣","🏤","🏥","🏦","🏨","🏩","🏪","🏫","🏭","🏯","🏰","💒","🗼","🗽","⛪","🕌","🛕","🕍","🕋","⛲","⛺","🌁","🌃","🏙","🌄","🌅","🌆","🌇","🌉","🗾","🏔","⛰","🌋","🗻","🏕","🏖","🏜","🏝","🏞","🏟","🏛","🏗","🧱","🪨","🪵","🛖","🏘","🏚","🏠","🏡","🏢","🏣","🏤","🏥","🏦","🏨","🏩","🏪","🏫","🏬","🏭","🏯","🏰","💒","🗼","🗽","⛪","🕌","🛕","🕍","🕋","⛲","⛺","🌁","🌃","🏙","🌄","🌅","🌆","🌇","🌉","🎠","🎡","🎢","🚂","🚃","🚄","🚅","🚆","🚇","🚈","🚉","🚊","🚝","🚞","🚋","🚌","🚍","🚎","🚐","🚑","🚒","🚓","🚔","🚕","🚖","🚗","🚘","🚙","🚚","🚛","🚜","🏎","🏍","🛵","🛺","🚲","🛴","🛹","🛼","🚏","🛣","🛤","⛽","🚨","🚥","🚦","🛑","🚧","⚓","🛟","⛵","🛶","🚤","🛳","⛴","🛥","🚢","✈","🛩","🛫","🛬","🪂","💺","🚁","🚟","🚠","🚡","🛰","🚀","🛸","🎠","🎡","🎢","💈","🎪","🎭","🔮","🎨","🎬","🎤","🎧","🎼","🎹","🥁","🎷","🎺","🎸","🪕","🎻","🎲","♟","🎯","🎳","🎮","🕹","🎰","🎱","🎲","🀄","🃏","🎴","🎭","🖼","🎨","🧵","🧶","🎽","🥋","🥊","🦺","👑","👒","🎩","🎓","🧢","⛑","💄","💍","💎","🔇","🔈","🔉","🔊","📢","📣","📯","🔔","🔕","🎵","🎶","💤","💢","💣","💥","💦","💨","🕳","💫","💬","🗨","🗯","💭","🛑","🕛","🕐","🕜","🕑","🕝","🕒","🕞","🕓","🕟","🕔","🕠","🕕","🕡","🕖","🕢","🕗","🕣","🕘","🕤","🕙","🕥","🕚","🕦","🌀","♻","🏧","🚮","🚰","♿","🚹","🚺","🚻","🚼","🚾","🛂","🛃","🛄","🛅","⚠","🚸","⛔","🚫","🚳","🚭","🚯","🚱","🚷","📵","🔞","☢","☣","💟","✝","☪","🕉","☸","✡","🔯","🕎","☯","☦","🛐","⛎","♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓","🆔","⚕","♿","🈳","🈹","📵","🔞","☢","☣"];
 
 async function loadFirebase() {
   const cfg = await fetch(api("/api/firebase-config")).then(r => r.json());
@@ -43,6 +49,14 @@ async function handleAuthState(user) {
         online: true,
         lastSeen: serverTimestamp()
       }, { merge: true });
+      // Set offline on page close
+      window.addEventListener("beforeunload", () => {
+        setDoc(ref, { online: false, lastSeen: serverTimestamp() }, { merge: true });
+      });
+      // Also try to use Firestore's onDisconnect if available
+      try {
+        const disconnect = db._terminate ? null : db;
+      } catch (_) {}
     } catch (e) {}
     show("mainScreen");
     loadChats();
@@ -65,6 +79,11 @@ function showView(v) {
   document.querySelectorAll("#mainScreen .view").forEach(x => x.classList.remove("active"));
   $(v).classList.add("active");
   document.querySelectorAll(".bottomnav .bn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  // Cleanup overlays
+  $("emojiPicker").classList.add("hidden");
+  const ctx = document.getElementById("contextMenu");
+  if (ctx) ctx.remove();
+  if (v === "chatsView") { if (unsubMessages) unsubMessages(); unsubMessages = null; }
   if (v === "statusView") loadStatus();
   if (v === "settingsView") loadSettings();
 }
@@ -89,8 +108,46 @@ const COUNTRIES = [
   sel.value = "880";
 })();
 
-$("useEmailLink").onclick = () => { clearErr(); $("phoneStep").classList.add("hidden"); $("otpStep").classList.add("hidden"); $("emailStep").classList.remove("hidden"); };
-$("usePhoneLink").onclick = () => { clearErr(); $("emailStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
+// Auth tabs
+document.querySelectorAll(".auth-tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".auth-tab-content").forEach(c => c.classList.remove("active"));
+    tab.classList.add("active");
+    $(tab.dataset.tab).classList.add("active");
+    clearErr();
+  };
+});
+
+// Password strength
+$("passwordInput").addEventListener("input", () => {
+  const p = $("passwordInput").value;
+  const el = $("pwStrength");
+  if (p.length < 4) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  let score = 0;
+  if (p.length >= 6) score++;
+  if (p.length >= 10) score++;
+  if (/[a-z]/.test(p) && /[A-Z]/.test(p)) score++;
+  if (/\d/.test(p)) score++;
+  if (/[^a-zA-Z0-9]/.test(p)) score++;
+  const bar = $("pwBar");
+  const label = $("pwLabel");
+  if (score < 2) { bar.className = "pw-bar fill"; label.textContent = "Weak"; label.style.color = "var(--danger)"; }
+  else if (score < 4) { bar.className = "pw-bar medium"; label.textContent = "Medium"; label.style.color = "#f5a623"; }
+  else { bar.className = "pw-bar strong"; label.textContent = "Strong"; label.style.color = "var(--teal)"; }
+});
+
+// Phone auto-format
+$("phoneInput").addEventListener("input", (e) => {
+  let v = e.target.value.replace(/[^0-9]/g, "");
+  const cc = $("countryCode").value;
+  const formatted = $("phoneFormatted");
+  if (v.length >= 4) {
+    formatted.classList.remove("hidden");
+    formatted.textContent = "+" + cc + " " + v.replace(/(\d{3})(\d{3})(\d{4,})/, "$1 $2 $3");
+  } else { formatted.classList.add("hidden"); }
+});
 
 let recaptchaReady = null;
 function getVerifier() {
@@ -105,6 +162,7 @@ function getVerifier() {
 let tgPhone = null, tgPollTimer = null, tgDeadline = 0;
 async function startTelegramVerify() {
   if (!auth) { err("App still loading, wait a moment…"); return; }
+  if (!$("termsCheck").checked) { err("Agree to the Terms & Privacy Policy to continue"); return; }
   const cc = $("countryCode").value;
   let phone = $("phoneInput").value.trim().replace(/[^0-9]/g, "");
   if (!/^\d{6,15}$/.test(phone)) { err("Enter a valid number (digits only)"); return; }
@@ -118,7 +176,7 @@ async function startTelegramVerify() {
     $("tgPhone").textContent = tgPhone;
     $("tgOpen").href = data.deepLink;
     $("tgHint").classList.remove("hidden");
-    $("phoneStep").classList.add("hidden"); $("otpStep").classList.remove("hidden");
+    $("phoneTab").classList.add("hidden"); $("otpStep").classList.remove("hidden");
     $("tgStatus").textContent = "Open Telegram and tap Confirm login…";
     if (tgPollTimer) clearInterval(tgPollTimer);
     tgDeadline = Date.now() + 5 * 60 * 1000;
@@ -147,10 +205,11 @@ async function pollTelegramStatus() {
 }
 $("sendOtpBtn").onclick = startTelegramVerify;
 $("tgCheck").onclick = () => { if (tgPhone) { $("tgStatus").textContent = "Checking…"; pollTelegramStatus(); } };
-$("resendLink").onclick = () => { if (tgPollTimer) clearInterval(tgPollTimer); tgPollTimer = null; $("otpStep").classList.add("hidden"); $("phoneStep").classList.remove("hidden"); };
+$("resendLink").onclick = () => { if (tgPollTimer) clearInterval(tgPollTimer); tgPollTimer = null; $("otpStep").classList.add("hidden"); $("phoneTab").classList.remove("hidden"); };
 
 $("emailBtn").onclick = async () => {
   const e = $("emailInput").value.trim(), p = $("passwordInput").value;
+  if (!$("termsCheck").checked) { err("Agree to the Terms & Privacy Policy to continue"); return; }
   if (!e || !p) { err("Email and password required"); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { err("Enter a valid email"); return; }
   if (p.length < 6) { err("Password must be at least 6 characters"); return; }
@@ -165,7 +224,7 @@ $("emailBtn").onclick = async () => {
     } else if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
       err("Wrong email or password");
     } else { err(friendly(err)); }
-  } finally { $("emailBtn").disabled = false; $("emailBtn").textContent = "Sign in / Create account"; }
+  } finally { $("emailBtn").disabled = false; $("emailBtn").textContent = "Continue"; }
 };
 
 $("pwToggle").onclick = () => {
@@ -226,23 +285,86 @@ function friendly(e) {
 // ---------------- CHATS ----------------
 function chatId(a, b) { return [a, b].sort().join("_"); }
 
+// Chat search
+let allChatsData = [];
+$("searchInput").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  renderChatList(q);
+});
+
+function renderChatList(filter = "") {
+  const list = $("chatList");
+  list.innerHTML = "";
+  const filtered = filter ? allChatsData.filter(c => (c.name||"").toLowerCase().includes(filter) || (c.lastMsg||"").toLowerCase().includes(filter)) : allChatsData;
+  if (!filtered.length) {
+    list.innerHTML = filter
+      ? '<div class="empty-state"><i class="fa-solid fa-search"></i><p>No chats found</p></div>'
+      : '<div class="empty-state"><i class="fa-regular fa-message"></i><p>No chats yet<br><span style="font-size:12px;color:var(--muted)">Tap + to start a conversation</span></p></div>';
+    return;
+  }
+  filtered.forEach(c => {
+    const item = document.createElement("div");
+    item.className = "chat-item";
+    const avatarWrap = document.createElement("div");
+    avatarWrap.className = "avatar-wrap";
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = (c.name||"?").charAt(0).toUpperCase();
+    avatarWrap.appendChild(avatar);
+    const dot = document.createElement("div");
+    dot.className = "online-dot";
+    dot.id = "od_" + c.peer;
+    avatarWrap.appendChild(dot);
+    item.appendChild(avatarWrap);
+    const body = document.createElement("div");
+    body.className = "ci-body";
+    body.innerHTML = `<div class="ci-name"><span>${esc(c.name||"Chat")}</span><span class="ci-time">${timeStr(c.last)}</span></div>
+      <div class="ci-last">${c.lastMsgHtml}</div>`;
+    item.appendChild(body);
+    if (c.unread > 0) {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = Math.min(c.unread, 99);
+      item.appendChild(badge);
+    }
+    item.onclick = () => openConversation(c.peer, c.name, c.type || "user");
+    list.appendChild(item);
+  });
+}
+
 async function loadChats() {
   if (unsubChats) unsubChats();
+  allChatsData = [];
+  const onlineCache = {};
+  // Show skeleton
+  const list = $("chatList");
+  list.innerHTML = Array(6).fill(0).map(() =>
+    '<div class="skel"><div class="skel-avatar"></div><div class="skel-lines"><div class="skel-line"></div><div class="skel-line"></div></div></div>'
+  ).join("");
   const q = query(collection(db, "users", currentUser.uid, "chats"), orderBy("last", "desc"));
   unsubChats = onSnapshot(q, (snap) => {
-    const list = $("chatList");
-    list.innerHTML = "";
-    if (snap.empty) { list.innerHTML = '<p style="color:#8696a0;text-align:center;margin-top:30px;font-size:13px">No chats yet. Tap + to start.</p>'; }
+    allChatsData = [];
     snap.forEach(d => {
       const c = d.data();
-      const item = document.createElement("div");
-      item.className = "chat-item";
-      item.innerHTML = `<div class="avatar">${(c.name||"?").charAt(0).toUpperCase()}</div>
-        <div class="ci-body"><div class="ci-name"><span>${esc(c.name||"Chat")}</span><span class="ci-time">${timeStr(c.last)}</span></div>
-        <div class="ci-last">${esc(c.lastMsg||"")}</div></div>`;
-      item.onclick = () => openConversation(c.peer, c.name, c.type || "user");
-      list.appendChild(item);
+      let lastMsgHtml = esc(c.lastMsg||"");
+      if (c.lastMsg && (c.lastMsg||"").startsWith("🎤")) lastMsgHtml = '<i class="fa-solid fa-microphone" style="font-size:11px;margin-right:4px"></i>' + lastMsgHtml;
+      if (c.type !== "group" && c.unread > 0) {
+        lastMsgHtml = `<i class="fa-solid fa-circle" style="color:var(--teal);font-size:6px;margin-right:4px;flex-shrink:0"></i>` + lastMsgHtml;
+      }
+      allChatsData.push({ peer: c.peer, name: c.name, type: c.type || "user", last: c.last, lastMsg: c.lastMsg, lastMsgHtml, unread: c.unread || 0 });
+
+      // Subscribe to online status for user chats (once)
+      if ((c.type !== "group") && !onlineCache[c.peer]) {
+        onlineCache[c.peer] = true;
+        onSnapshot(doc(db, "users", c.peer), s => {
+          const u = s.data();
+          const d2 = document.getElementById("od_" + c.peer);
+          if (d2) d2.classList.toggle("show", u && u.online === true);
+        });
+      }
     });
+    const filter = $("searchInput").value.trim().toLowerCase();
+    renderChatList(filter);
   });
 }
 
@@ -251,7 +373,167 @@ function timeStr(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+function dateLabel(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const now = new Date();
+  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, now)) return "Today";
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (same(d, yest)) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
+}
 function esc(s) { return (s||"").replace(/[&<>]/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m])); }
+
+// ---------------- EMOJI PICKER ----------------
+$("emojiBtn").onclick = () => {
+  const p = $("emojiPicker");
+  p.classList.toggle("hidden");
+  if (!p.children.length) {
+    EMOJIS.forEach(e => {
+      const el = document.createElement("span");
+      el.className = "e"; el.textContent = e;
+      el.onclick = () => { $("msgInput").value += e; $("msgInput").focus(); p.classList.add("hidden"); };
+      p.appendChild(el);
+    });
+  }
+};
+
+// ---------------- VOICE RECORDING ----------------
+$("voiceBtn").onclick = async () => {
+  if (voiceActive) { stopVoiceRecording(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceChunks = [];
+    voiceRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
+    voiceRecorder.ondataavailable = e => { if (e.data.size) voiceChunks.push(e.data); };
+    voiceRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (!voiceChunks.length || !currentPeer) { voiceActive = false; updateVoiceBtn(); return; }
+      const blob = new Blob(voiceChunks, { type: "audio/webm" });
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const b64 = reader.result.split(",")[1];
+        await sendMessageWithVoice(b64);
+        voiceActive = false; updateVoiceBtn();
+      };
+      reader.readAsDataURL(blob);
+    };
+    voiceRecorder.start();
+    voiceActive = true;
+    updateVoiceBtn();
+    toast("Recording... tap mic to stop");
+  } catch (e) { toast("Microphone access denied"); }
+};
+function stopVoiceRecording() {
+  if (voiceRecorder && voiceRecorder.state !== "inactive") voiceRecorder.stop();
+  voiceActive = false;
+  updateVoiceBtn();
+}
+function updateVoiceBtn() {
+  $("voiceBtn").className = "composer-btn" + (voiceActive ? " voice-rec-active" : "");
+  $("voiceBtn").innerHTML = voiceActive ? '<i class="fa-solid fa-stop"></i>' : '<i class="fa-solid fa-microphone"></i>';
+}
+async function sendMessageWithVoice(b64) {
+  if (!currentPeer) return;
+  const msg = { from: currentUser.uid, voice: b64, ts: serverTimestamp() };
+  if (currentPeer.type === "group") {
+    msg.fromName = currentUser.displayName || currentUser.phoneNumber;
+    const cid = currentPeer.uid;
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "groups", cid), { last: serverTimestamp(), lastMsg: "🎤 Voice message" }, { merge: true });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", cid), { peer: cid, name: currentPeer.name, type: "group", last: serverTimestamp(), lastMsg: "🎤 Voice message" }, { merge: true });
+  } else {
+    const cid = chatId(currentUser.uid, currentPeer.uid);
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: "🎤 Voice message" }, { merge: true });
+    await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: "🎤 Voice message" }, { merge: true });
+  }
+}
+
+// ---------------- ATTACHMENT ----------------
+let pendingImage = null;
+$("attachBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    pendingImage = ev.target.result;
+    $("attachPreviewImg").src = pendingImage;
+    $("attachPreviewName").textContent = f.name;
+    $("attachPreview").classList.remove("hidden");
+  };
+  reader.readAsDataURL(f);
+};
+$("attachClearBtn").onclick = () => {
+  pendingImage = null;
+  $("attachPreview").classList.add("hidden");
+  $("fileInput").value = "";
+};
+
+async function sendMessage() {
+  const text = $("msgInput").value.trim();
+  if ((!text && !pendingImage) || !currentPeer) return;
+
+  const msg = { from: currentUser.uid, ts: serverTimestamp() };
+  if (text) msg.text = text;
+  if (pendingImage) {
+    msg.image = pendingImage;
+    msg.text = text || "";
+    pendingImage = null;
+    $("attachPreview").classList.add("hidden");
+    $("fileInput").value = "";
+  }
+
+  if (currentPeer.type === "group") {
+    msg.fromName = currentUser.displayName || currentUser.phoneNumber;
+    const cid = currentPeer.uid;
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "groups", cid), { last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+    await setDoc(doc(db, "users", currentUser.uid, "chats", cid), { peer: cid, name: currentPeer.name, type: "group", last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+  } else {
+    const cid = chatId(currentUser.uid, currentPeer.uid);
+    await addDoc(collection(db, "chats", cid, "messages"), msg);
+    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+    await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: text || "📷 Image" }, { merge: true });
+  }
+  $("msgInput").value = "";
+}
+
+// Context menu
+document.addEventListener("click", () => { const m = $("contextMenu"); if (m) m.remove(); });
+function showContextMenu(x, y, items) {
+  const old = document.getElementById("contextMenu");
+  if (old) old.remove();
+  const m = document.createElement("div");
+  m.id = "contextMenu"; m.className = "context-menu";
+  m.style.left = x + "px"; m.style.top = y + "px";
+  items.forEach(item => {
+    const el = document.createElement("div");
+    el.className = "context-item" + (item.danger ? " danger" : "");
+    el.innerHTML = `<i class="fa-solid fa-${item.icon}"></i> ${item.label}`;
+    el.onclick = (e) => { e.stopPropagation(); m.remove(); item.action(); };
+    m.appendChild(el);
+  });
+  document.body.appendChild(m);
+}
+
+// ---------------- TYPING INDICATOR ----------------
+let typingTimer = null;
+$("msgInput").addEventListener("input", () => {
+  if (typingTimer) clearTimeout(typingTimer);
+  if (currentPeer && currentPeer.type !== "group") {
+    const cid = chatId(currentUser.uid, currentPeer.uid);
+    setDoc(doc(db, "chats", cid, "typing", currentUser.uid), { typing: true }, { merge: true });
+  }
+  typingTimer = setTimeout(() => {
+    if (currentPeer && currentPeer.type !== "group") {
+      const cid = chatId(currentUser.uid, currentPeer.uid);
+      setDoc(doc(db, "chats", cid, "typing", currentUser.uid), { typing: false }, { merge: true });
+    }
+  }, 2000);
+});
 
 // ---------------- CONVERSATION ----------------
 async function openConversation(peerUid, peerName, type = "user") {
@@ -259,79 +541,125 @@ async function openConversation(peerUid, peerName, type = "user") {
   $("convName").textContent = peerName;
   $("convAvatar").textContent = (peerName || "?").charAt(0).toUpperCase();
   showView("conversationView");
+  $("emojiPicker").classList.add("hidden");
   if (type === "user") {
     const pr = doc(db, "users", peerUid);
     onSnapshot(pr, s => { const d = s.data(); $("convStatus").textContent = d && d.online ? "online" : "offline"; });
   } else { $("convStatus").textContent = "group"; }
-  if (unsubMessages) unsubMessages();
+
   const cid = (type === "group") ? peerUid : chatId(currentUser.uid, peerUid);
+
+  // Typing indicator for user chats
+  if (unsubTyping) unsubTyping();
+  if (type === "user") {
+    unsubTyping = onSnapshot(doc(db, "chats", cid, "typing", peerUid), s => {
+      const d = s.data();
+      const typingEl = $("typingIndicator");
+      if (d && d.typing && typingEl) typingEl.classList.remove("hidden");
+      else if (typingEl) typingEl.classList.add("hidden");
+    });
+  } else if (unsubTyping) { unsubTyping(); unsubTyping = null; }
+
+  // Mark incoming messages as read
+  if (type === "user") {
+    setDoc(doc(db, "users", currentUser.uid, "chats", peerUid), { unread: 0 }, { merge: true });
+  }
+
+  if (unsubMessages) unsubMessages();
   const q = query(collection(db, "chats", cid, "messages"), orderBy("ts", "asc"));
   const box = $("messages"); box.innerHTML = "";
-  const lpCache = {};
-  async function renderLinkPreview(el, text) {
-    if (!LINKPREVIEW_KEY) return;
-    const urlMatch = text.match(/(https?:\/\/[^\s<>"']+)/gi);
-    if (!urlMatch) return;
-    const url = urlMatch[0];
-    if (lpCache[url]) {
-      appendLinkCard(el, lpCache[url], url);
-      return;
-    }
-    try {
-      const r = await fetch(`https://api.linkpreview.net/?key=${LINKPREVIEW_KEY}&q=${encodeURIComponent(url)}`, { headers: { "user-agent": "Mozilla/5.0 (AgoraMeet)" } });
-      const d = await r.json();
-      if (d.title || d.image) {
-        lpCache[url] = d;
-        appendLinkCard(el, d, url);
-      }
-    } catch (e) {}
-  }
-  function appendLinkCard(parent, data, url) {
-    const card = document.createElement("div");
-    card.className = "lp-card";
-    card.innerHTML = `<a href="${url}" target="_blank" class="lp-link">
-      ${data.image ? `<img src="${data.image}" class="lp-img" loading="lazy" onerror="this.style.display='none'">` : ""}
-      <div class="lp-info"><div class="lp-title">${esc(data.title || data.url)}</div>
-      ${data.description ? `<div class="lp-desc">${esc(data.description)}</div>` : ""}
-      <div class="lp-url">${new URL(url).hostname}</div></div></a>`;
-    parent.appendChild(card);
-  }
   unsubMessages = onSnapshot(q, snap => {
+    let lastDate = "";
     box.innerHTML = "";
     snap.forEach(d => {
       const m = d.data();
+      const msgDate = dateLabel(m.ts);
+      if (msgDate && msgDate !== lastDate) {
+        lastDate = msgDate;
+        const dd = document.createElement("div");
+        dd.className = "date-divider";
+        dd.innerHTML = `<span>${msgDate}</span>`;
+        box.appendChild(dd);
+      }
       const div = document.createElement("div");
       const mine = m.from === currentUser.uid;
       div.className = "msg " + (mine ? "out" : "in");
-      const who = (type === "group" && !mine && m.fromName) ? `<b style="color:#7fd;">${esc(m.fromName)}:</b> ` : "";
-      const ticks = mine ? '<span class="ticks">✓✓</span>' : "";
-      div.innerHTML = who + esc(m.text) + ticks + `<span class="t">${timeStr(m.ts)}</span>`;
+
+      let content = "";
+      if (m.voice) {
+        content = `<div class="voice-msg" onclick="window.__playVoice(this)" data-b64="${m.voice}">
+          <span class="play-btn"><i class="fa-solid fa-play"></i></span>
+          <span class="waveform"></span>
+          <span class="duration">••</span>
+        </div>`;
+      } else if (m.image) {
+        content = `<img src="${m.image}" class="msg-img" onerror="this.style.display='none'"><span class="caption">${esc(m.text||"")}</span>`;
+      } else {
+        const who = (type === "group" && !mine && m.fromName) ? `<b style="color:#7fd;">${esc(m.fromName)}:</b> ` : "";
+        content = who + esc(m.text||"");
+      }
+
+      // Read status tracking
+      let ticks = "";
+      if (mine) {
+        if (m.read) ticks = '<span class="ticks read">✓✓</span>';
+        else ticks = '<span class="ticks">✓</span>';
+      }
+
+      div.innerHTML = content + ticks + `<span class="t">${timeStr(m.ts)}</span>`;
+
+      // Long-press context menu for own messages
+      if (mine) {
+        div.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          showContextMenu(e.clientX, e.clientY, [
+            { icon: "trash-can", label: "Delete for me", danger: true, action: () => {
+              deleteDoc(doc(db, "chats", cid, "messages", d.id));
+              toast("Message deleted");
+            }}
+          ]);
+        });
+        // Also handle long touch for mobile
+        let longTimer;
+        div.addEventListener("touchstart", () => { longTimer = setTimeout(() => {
+          const rect = div.getBoundingClientRect();
+          showContextMenu(rect.right - 160, rect.top, [
+            { icon: "trash-can", label: "Delete for me", danger: true, action: () => {
+              deleteDoc(doc(db, "chats", cid, "messages", d.id));
+              toast("Message deleted");
+            }}
+          ]);
+        }, 500); });
+        div.addEventListener("touchend", () => clearTimeout(longTimer));
+        div.addEventListener("touchmove", () => clearTimeout(longTimer));
+      }
+
       box.appendChild(div);
-      if (m.text && LINKPREVIEW_KEY) renderLinkPreview(div, m.text);
+
+      // Auto-mark messages as read (after rendering current message)
+      if (!mine && type === "user") {
+        const ref = doc(db, "chats", cid, "messages", d.id);
+        updateDoc(ref, { read: true });
+      }
     });
     box.scrollTop = box.scrollHeight;
   });
 }
 
+// Voice message play
+window.__playVoice = function(el) {
+  const b64 = el.dataset.b64;
+  if (!b64) return;
+  const audio = new Audio("data:audio/webm;base64," + b64);
+  audio.play();
+  const btn = el.querySelector(".play-btn i");
+  btn.className = "fa-solid fa-pause";
+  audio.onended = () => { btn.className = "fa-solid fa-play"; };
+};
+
 $("backBtn").onclick = () => showView("chatsView");
 $("sendBtn").onclick = sendMessage;
 $("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
-async function sendMessage() {
-  const text = $("msgInput").value.trim();
-  if (!text || !currentPeer) return;
-  if (currentPeer.type === "group") {
-    const cid = currentPeer.uid;
-    await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, fromName: currentUser.displayName || currentUser.phoneNumber, text, ts: serverTimestamp() });
-    await setDoc(doc(db, "groups", cid), { last: serverTimestamp(), lastMsg: text }, { merge: true });
-    await setDoc(doc(db, "users", currentUser.uid, "chats", cid), { peer: cid, name: currentPeer.name, type: "group", last: serverTimestamp(), lastMsg: text }, { merge: true });
-  } else {
-    const cid = chatId(currentUser.uid, currentPeer.uid);
-    await addDoc(collection(db, "chats", cid, "messages"), { from: currentUser.uid, text, ts: serverTimestamp() });
-    await setDoc(doc(db, "users", currentUser.uid, "chats", currentPeer.uid), { peer: currentPeer.uid, name: currentPeer.name, last: serverTimestamp(), lastMsg: text }, { merge: true });
-    await setDoc(doc(db, "users", currentPeer.uid, "chats", currentUser.uid), { peer: currentUser.uid, name: currentUser.displayName || currentUser.phoneNumber || "You", last: serverTimestamp(), lastMsg: text }, { merge: true });
-  }
-  $("msgInput").value = "";
-}
 
 // ---------------- NEW CHAT ----------------
 $("newChatBtn").onclick = () => { $("peopleList").innerHTML = ""; showView("newChatView"); };
@@ -526,10 +854,15 @@ $("settingsProfile").onclick = () => {
 };
 $("setNameBtn").onclick = () => $("settingsProfile").onclick();
 $("setThemeBtn").onclick = () => { document.body.classList.toggle("light"); loadSettings(); };
-$("setLogoutBtn").onclick = () => signOut(auth);
+$("setLogoutBtn").onclick = async () => {
+  if (currentUser) {
+    try { await setDoc(doc(db, "users", currentUser.uid), { online: false, lastSeen: serverTimestamp() }, { merge: true }); } catch(_) {}
+  }
+  signOut(auth);
+};
 $("setAboutBtn").onclick = () => {
   $("viewerTitle").textContent = "About AgoraMeet";
-  $("viewerBody").innerHTML = '<div class="msg in" style="max-width:90%;align-self:center;margin-top:20px">AgoraMeet v2.1 — WhatsApp-style messenger with Agora + Cloudflare calls and an AI assistant.<br><br>Built with Firebase, Agora, Capacitor.</div>';
+  $("viewerBody").innerHTML = `<div class="msg in" style="max-width:90%;align-self:center;margin-top:20px">AgoraMeet v${VERSION} — WhatsApp-style messenger with Agora + Cloudflare calls and an AI assistant.<br><br>Built with Firebase, Agora, Cloudflare, Capacitor.</div>`;
   showView("viewerView");
 };
 $("setPrivacyBtn").onclick = async () => {
@@ -565,82 +898,6 @@ function aiBubble(role, text) {
 $("aiModel").onchange = () => { aiModel = $("aiModel").value; };
 $("aiClearBtn").onclick = () => { aiHistory = [{ role: "system", content: AI_SYSTEM }]; $("aiMessages").innerHTML = ""; toast("Chat cleared"); };
 $("aiBackBtn").onclick = () => showView("chatsView");
-
-// TTS (Text-to-Speech) toggle
-let aiTtsEnabled = false;
-$("aiTtsToggleBtn").onclick = () => {
-  aiTtsEnabled = !aiTtsEnabled;
-  if (aiTtsEnabled) {
-    $("aiTtsToggleBtn").innerHTML = '<i class="fa-solid fa-volume-high"></i>';
-    $("aiTtsToggleBtn").style.color = "var(--teal)";
-    toast("AI will speak responses");
-  } else {
-    $("aiTtsToggleBtn").innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
-    $("aiTtsToggleBtn").style.color = "var(--text-sub)";
-    window.speechSynthesis.cancel();
-  }
-};
-
-// STT (Speech-to-Text) dictation
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let sttRecognition = null;
-if (SpeechRecognition) {
-  sttRecognition = new SpeechRecognition();
-  sttRecognition.continuous = false;
-  sttRecognition.interimResults = false;
-  sttRecognition.lang = "en-US";
-  sttRecognition.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    $("aiInput").value = text;
-    $("aiSendBtn").click();
-  };
-  sttRecognition.onerror = () => { toast("Speech recognition failed"); $("aiMicBtn").style.color = "var(--text-sub)"; };
-}
-$("aiMicBtn").onclick = () => {
-  if (!sttRecognition) { toast("Speech recognition not supported"); return; }
-  try { sttRecognition.start(); $("aiMicBtn").style.color = "var(--teal)"; toast("Listening…"); }
-  catch { sttRecognition.stop(); }
-};
-
-// LiveKit AI Voice Call
-let lkRoom = null, lkActive = false, lkLocalTrack = null;
-async function startAiVoiceCall() {
-  if (lkActive) return endAiVoiceCall();
-  if (typeof LiveKit === "undefined") { toast("LiveKit SDK not loaded"); return; }
-  toast("Connecting to AI Voice…");
-  $("aiVoiceCallBtn").style.color = "var(--red)";
-  $("aiVoiceCallBtn").innerHTML = '<i class="fa-solid fa-phone-slash"></i>';
-  lkActive = true;
-  try {
-    const roomName = "ai-voice-" + (currentUser?.uid?.slice(-8) || "guest");
-    const r = await fetch(api("/api/ai/voice"), {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ room: roomName, identity: "user-" + (currentUser?.uid || "guest"), name: currentUser?.displayName || "User" })
-    });
-    if (!r.ok) throw new Error("Failed to get token");
-    const { token, url } = await r.json();
-    lkRoom = new LiveKit.Room();
-    lkRoom.on(LiveKit.RoomEvent.Connected, () => toast("AI Connected! Say something…"));
-    lkRoom.on(LiveKit.RoomEvent.Disconnected, () => endAiVoiceCall());
-    lkRoom.on(LiveKit.RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === "audio") { const el = track.attach(); document.body.appendChild(el); }
-    });
-    await lkRoom.connect(url, token);
-    lkLocalTrack = await LiveKit.createLocalAudioTrack();
-    await lkRoom.localParticipant.publishTrack(lkLocalTrack);
-  } catch (e) { toast("Call failed: " + e.message); endAiVoiceCall(); }
-}
-function endAiVoiceCall() {
-  lkActive = false;
-  if (lkRoom) { try { lkRoom.disconnect(); } catch {}};
-  lkRoom = null, lkLocalTrack = null;
-  $("aiVoiceCallBtn").style.color = "var(--teal)";
-  $("aiVoiceCallBtn").innerHTML = '<i class="fa-solid fa-phone"></i>';
-  toast("AI Call ended");
-}
-$("aiVoiceCallBtn").onclick = startAiVoiceCall;
-window.addEventListener("beforeunload", () => { if (lkRoom) lkRoom.disconnect(); });
-
 $("aiSendBtn").onclick = async () => {
   const text = $("aiInput").value.trim();
   if (!text) return;
@@ -649,22 +906,14 @@ $("aiSendBtn").onclick = async () => {
   aiHistory.push({ role: "user", content: text });
   $("aiStatus").textContent = "typing…";
   try {
-    const [provider, model] = aiModel.includes(":") ? aiModel.split(":") : ["", aiModel];
-    const r = await fetch(api("/api/ai/chat"), {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: aiHistory, model, provider: provider || undefined })
-    });
+    const r = await fetch(api("/api/ai/chat"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: aiHistory, model: aiModel }) });
     const data = await r.json();
     const reply = data.reply || data.error || "(no response)";
     aiBubble("assistant", reply);
     aiHistory.push({ role: "assistant", content: reply });
-    if (aiTtsEnabled) {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(reply);
-      utter.rate = 0.95;
-      window.speechSynthesis.speak(utter);
-    }
-  } catch (e) { aiBubble("assistant", "Error: " + e.message); }
+  } catch (e) {
+    aiBubble("assistant", "Error: " + e.message);
+  }
   $("aiStatus").textContent = "ready";
 };
 $("aiInput").addEventListener("keydown", e => { if (e.key === "Enter") $("aiSendBtn").onclick(); });
