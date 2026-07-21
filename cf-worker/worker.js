@@ -739,6 +739,39 @@ export default {
         }
       }
 
+      // DuckDuckGo search proxy
+      if (p === "/api/search" && request.method === "GET") {
+        const q = url.searchParams.get("q");
+        if (!q) return json({ error: "query required" }, 400);
+        try {
+          const r = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q), {
+            headers: { "user-agent": "Mozilla/5.0" }
+          });
+          const html = await r.text();
+          // Extract result links from the DuckDuckGo HTML
+          const results = [];
+          const re = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+          let m;
+          while ((m = re.exec(html)) !== null) {
+            results.push({ url: m[1].replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, ""), title: m[2].replace(/<[^>]*>/g, "").trim() });
+            if (results.length >= 10) break;
+          }
+          return json({ results, count: results.length });
+        } catch (e) { return json({ error: String(e.message || e) }, 502); }
+      }
+
+      // Pollinations AI image generation (free, no API key)
+      if (p === "/api/image/pollinations" && request.method === "GET") {
+        const prompt = url.searchParams.get("q") || url.searchParams.get("prompt") || "nature";
+        const width = url.searchParams.get("width") || 1024;
+        const height = url.searchParams.get("height") || 1024;
+        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&nologo=true`;
+        try {
+          const img = await fetch(imgUrl);
+          return new Response(img.body, { headers: { "content-type": img.headers.get("content-type") || "image/jpeg", "cache-control": "public,max-age=3600", "access-control-allow-origin": "*" } });
+        } catch (e) { return json({ error: String(e.message || e) }, 502); }
+      }
+
       // Felix-RDX free API proxy (all endpoints: AI, downloaders, search, tools, etc.)
       const FELIX_BASE = "https://felix-rdx-unlimited-free-apis.vercel.app/api/v1/api";
       if (p.startsWith("/api/felix/")) {
